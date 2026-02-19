@@ -89,7 +89,7 @@ Docker Compose version v2.x.x
 **Step 2.** Clone the repository (or copy the project files to your server).
 
 ```bash
-git clone https://github.com/your-org/obsidian-cloud-sync.git
+git clone https://github.com/RubeHicksCube/obsidian-cloud-sync.git
 cd obsidian-cloud-sync
 ```
 
@@ -206,7 +206,7 @@ rustc 1.75.0 (or newer)
 **Step 2.** Clone the repository.
 
 ```bash
-git clone https://github.com/your-org/obsidian-cloud-sync.git
+git clone https://github.com/RubeHicksCube/obsidian-cloud-sync.git
 cd obsidian-cloud-sync
 ```
 
