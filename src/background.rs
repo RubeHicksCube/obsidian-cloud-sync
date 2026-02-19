@@ -29,12 +29,20 @@ pub fn spawn_background_tasks(
         });
     }
 
-    // Version pruning — every 6 hours
+    // Version pruning — run once at startup (after 30s), then every 6 hours
     {
         let pool = pool.clone();
         let config = config.clone();
         let cancel = token.clone();
         tokio::spawn(async move {
+            // Initial run shortly after startup to clean up any accumulated versions
+            tokio::select! {
+                _ = cancel.cancelled() => return,
+                _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {}
+            }
+            if let Err(e) = prune_versions(&pool, &config).await {
+                tracing::warn!("Version pruning error: {e}");
+            }
             loop {
                 tokio::select! {
                     _ = cancel.cancelled() => break,

@@ -213,6 +213,7 @@ pub async fn upload(
 }
 
 /// Upsert file record within a transaction to prevent race conditions.
+/// Only creates a new version when the content hash actually changes.
 async fn upsert_file_record(
     db: &sqlx::SqlitePool,
     user_id: &str,
@@ -225,9 +226,8 @@ async fn upsert_file_record(
 ) -> Result<(String, i64), AppError> {
     let mut tx = db.begin().await?;
 
-    // SQLite BEGIN IMMEDIATE is handled by sqlx transaction
-    let existing: Option<(String, i64)> = sqlx::query_as(
-        "SELECT id, current_version FROM files WHERE user_id = ? AND path = ?",
+    let existing: Option<(String, i64, String)> = sqlx::query_as(
+        "SELECT id, current_version, hash FROM files WHERE user_id = ? AND path = ?",
     )
     .bind(user_id)
     .bind(file_path)
@@ -235,7 +235,19 @@ async fn upsert_file_record(
     .await?;
 
     let (file_id, version) = match existing {
-        Some((id, current_version)) => {
+        Some((id, current_version, existing_hash)) => {
+            if existing_hash == hash {
+                // Content unchanged — no new version, no timestamp update.
+                // Just ensure it's not marked deleted.
+                sqlx::query("UPDATE files SET is_deleted = FALSE WHERE id = ? AND is_deleted = TRUE")
+                    .bind(&id)
+                    .execute(&mut *tx)
+                    .await?;
+                tx.commit().await?;
+                return Ok((id, current_version));
+            }
+
+            // Content actually changed — new version
             let new_version = current_version + 1;
             sqlx::query(
                 "UPDATE files SET hash = ?, size = ?, current_version = ?, is_deleted = FALSE, updated_at = ? WHERE id = ?",
@@ -268,7 +280,7 @@ async fn upsert_file_record(
         }
     };
 
-    // Create version record
+    // Only create a version record when content changed (new file or new hash)
     sqlx::query(
         "INSERT INTO file_versions (id, file_id, version, hash, size, blob_path, device_id, created_at) \
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
