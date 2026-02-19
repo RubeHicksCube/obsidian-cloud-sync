@@ -89,6 +89,11 @@ async fn main() {
             "/api/files/{id}/rollback",
             post(files::handlers::rollback),
         )
+        .route(
+            "/api/files/{id}/restore",
+            post(files::handlers::restore),
+        )
+        .route("/api/files/archive", delete(files::handlers::wipe_archive))
         .route("/api/devices", get(devices::handlers::list_devices))
         .route(
             "/api/devices/{id}",

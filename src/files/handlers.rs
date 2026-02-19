@@ -223,3 +223,108 @@ pub async fn rollback(
         updated_at: updated.7,
     }))
 }
+
+pub async fn restore(
+    State(state): State<AppState>,
+    claims: axum::Extension<Claims>,
+    Path(file_id): Path<String>,
+) -> Result<Json<FileInfo>, AppError> {
+    // Verify file belongs to user and is deleted
+    let file: Option<(String, bool)> = sqlx::query_as(
+        "SELECT id, is_deleted FROM files WHERE id = ? AND user_id = ?",
+    )
+    .bind(&file_id)
+    .bind(&claims.sub)
+    .fetch_optional(&state.db)
+    .await?;
+
+    let (_id, is_deleted) =
+        file.ok_or_else(|| AppError::NotFound("File not found".into()))?;
+
+    if !is_deleted {
+        return Err(AppError::BadRequest("File is not deleted".into()));
+    }
+
+    let now = Utc::now().timestamp();
+
+    sqlx::query("UPDATE files SET is_deleted = FALSE, updated_at = ? WHERE id = ?")
+        .bind(now)
+        .bind(&file_id)
+        .execute(&state.db)
+        .await?;
+
+    crate::audit::log_event(
+        &state.db,
+        Some(&claims.sub),
+        "file_restore",
+        Some("file"),
+        Some(&file_id),
+        None,
+        None,
+    )
+    .await;
+
+    let updated: FileRow = sqlx::query_as(
+        "SELECT id, path, current_version, hash, size, is_deleted, created_at, updated_at FROM files WHERE id = ?",
+    )
+    .bind(&file_id)
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(Json(FileInfo {
+        id: updated.0,
+        path: updated.1,
+        current_version: updated.2,
+        hash: updated.3,
+        size: updated.4,
+        is_deleted: updated.5,
+        created_at: updated.6,
+        updated_at: updated.7,
+    }))
+}
+
+#[derive(Serialize)]
+pub struct WipeResponse {
+    pub message: String,
+}
+
+pub async fn wipe_archive(
+    State(state): State<AppState>,
+    claims: axum::Extension<Claims>,
+) -> Result<Json<WipeResponse>, AppError> {
+    let deleted_ids: Vec<(String,)> = sqlx::query_as(
+        "SELECT id FROM files WHERE user_id = ? AND is_deleted = TRUE",
+    )
+    .bind(&claims.sub)
+    .fetch_all(&state.db)
+    .await?;
+
+    let count = deleted_ids.len();
+
+    for (file_id,) in &deleted_ids {
+        sqlx::query("DELETE FROM file_versions WHERE file_id = ?")
+            .bind(file_id)
+            .execute(&state.db)
+            .await?;
+
+        sqlx::query("DELETE FROM files WHERE id = ?")
+            .bind(file_id)
+            .execute(&state.db)
+            .await?;
+    }
+
+    crate::audit::log_event(
+        &state.db,
+        Some(&claims.sub),
+        "archive_wipe",
+        None,
+        None,
+        Some(&format!("count={}", count)),
+        None,
+    )
+    .await;
+
+    Ok(Json(WipeResponse {
+        message: format!("{} files permanently deleted", count),
+    }))
+}

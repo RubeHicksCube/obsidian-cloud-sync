@@ -209,6 +209,10 @@ function renderApp(el, page, params) {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
             <span>Devices</span>
           </a>
+          <a href="#archive" class="${page === 'archive' ? 'active' : ''}">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+            <span>Archive</span>
+          </a>
           ${state.isAdmin ? raw(html`
           <a href="#users" class="${page === 'users' ? 'active' : ''}">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
@@ -238,6 +242,7 @@ function renderApp(el, page, params) {
     case 'dashboard': renderDashboard(content); break;
     case 'files': renderFiles(content, params); break;
     case 'devices': renderDevices(content); break;
+    case 'archive': renderArchive(content); break;
     case 'users': state.isAdmin ? renderUsers(content) : renderDashboard(content); break;
     case 'settings': state.isAdmin ? renderSettings(content) : renderDashboard(content); break;
     case 'audit': state.isAdmin ? renderAudit(content) : renderDashboard(content); break;
@@ -355,6 +360,53 @@ async function renderFileVersions(el, fileId) {
     };
   } catch (err) {
     $('#versions-content').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
+  }
+}
+
+// --- Archive ---
+async function renderArchive(el) {
+  el.innerHTML = html`
+    <div class="page-header">
+      <h2>Archive</h2>
+      <button class="btn btn-danger btn-sm" id="wipe-archive-btn">Wipe Archive</button>
+    </div>
+    <div id="archive-content"><div class="spinner"></div></div>`;
+  try {
+    const allFiles = await api('/files?include_deleted=true');
+    const archived = allFiles.filter(f => f.is_deleted);
+    if (archived.length === 0) {
+      $('#archive-content').innerHTML = html`<div class="empty-state"><p>Archive is empty.</p></div>`;
+      $('#wipe-archive-btn').style.display = 'none';
+      return;
+    }
+    $('#archive-content').innerHTML = html`
+      <div class="table-wrap"><table>
+        <thead><tr><th>Path</th><th>Size</th><th>Deleted At</th><th></th></tr></thead>
+        <tbody>${raw(archived.map(f => html`
+          <tr>
+            <td>${f.path}</td>
+            <td>${formatBytes(f.size)}</td>
+            <td>${formatTime(f.updated_at)}</td>
+            <td><button class="btn btn-outline btn-sm" onclick="restoreFile('${esc(f.id)}')">Restore</button></td>
+          </tr>`).join(''))}
+        </tbody>
+      </table></div>`;
+    window.restoreFile = async (id) => {
+      if (!confirm('Restore this file?')) return;
+      try {
+        await api(`/files/${id}/restore`, { method: 'POST' });
+        renderArchive(el);
+      } catch (err) { alert(err.message); }
+    };
+    $('#wipe-archive-btn').onclick = async () => {
+      if (!confirm('Permanently delete all archived files? This cannot be undone.')) return;
+      try {
+        await api('/files/archive', { method: 'DELETE' });
+        renderArchive(el);
+      } catch (err) { alert(err.message); }
+    };
+  } catch (err) {
+    $('#archive-content').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
   }
 }
 
