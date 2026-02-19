@@ -14,16 +14,8 @@ RUN touch src/main.rs && cargo build --release
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates curl && rm -rf /var/lib/apt/lists/*
 
-# Non-root user
-RUN useradd -r -u 1000 -m cloudsync
+COPY --from=builder /app/target/release/obsidian-cloud-sync /usr/local/bin/obsidian-cloud-sync
 
-COPY --from=builder --chown=cloudsync:cloudsync /app/target/release/obsidian-cloud-sync /usr/local/bin/obsidian-cloud-sync
-
-# Create data directory with correct ownership before switching to non-root
-RUN mkdir -p /data && chown cloudsync:cloudsync /data
-
-WORKDIR /app
-USER cloudsync
 EXPOSE 8443
 ENV BIND_ADDRESS=0.0.0.0:8443
 ENV DATABASE_URL=sqlite:/data/obsidian_sync.db
