@@ -270,7 +270,6 @@ async function renderDashboard(el) {
       api('/devices'),
     ]);
     const totalSize = files.reduce((s, f) => s + f.size, 0);
-    const activeDevices = devices.filter(d => !d.revoked).length;
     $('#stats').innerHTML = html`
       <div class="stat-card">
         <div class="stat-label">Files</div>
@@ -281,11 +280,7 @@ async function renderDashboard(el) {
         <div class="stat-value">${formatBytes(totalSize)}</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Active Devices</div>
-        <div class="stat-value">${activeDevices}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Total Devices</div>
+        <div class="stat-label">Devices</div>
         <div class="stat-value">${devices.length}</div>
       </div>`;
   } catch (err) {
@@ -423,20 +418,19 @@ async function renderDevices(el) {
     }
     $('#devices-content').innerHTML = html`
       <div class="table-wrap"><table>
-        <thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Last Seen</th><th>Created</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Type</th><th>Last Seen</th><th>Created</th><th></th></tr></thead>
         <tbody>${raw(devices.map(d => html`
           <tr>
             <td>${d.name}</td>
             <td>${d.device_type || '—'}</td>
-            <td>${raw(d.revoked ? '<span class="badge badge-danger">Revoked</span>' : '<span class="badge badge-success">Active</span>')}</td>
             <td>${formatTime(d.last_seen_at)}</td>
             <td>${formatTime(d.created_at)}</td>
-            <td>${raw(!d.revoked ? `<button class="btn btn-danger btn-sm" onclick="revokeDevice('${esc(d.id)}')">Revoke</button>` : '')}</td>
+            <td><button class="btn btn-danger btn-sm" onclick="revokeDevice('${esc(d.id)}')">Remove</button></td>
           </tr>`).join(''))}
         </tbody>
       </table></div>`;
     window.revokeDevice = async (id) => {
-      if (!confirm('Revoke this device? It will be signed out.')) return;
+      if (!confirm('Remove this device? It will be signed out and forgotten.')) return;
       try {
         await api(`/devices/${id}`, { method: 'DELETE' });
         renderDevices(el);

@@ -72,14 +72,18 @@ pub async fn revoke_device(
         ));
     }
 
-    // Revoke device
-    sqlx::query("UPDATE devices SET revoked = TRUE WHERE id = ?")
+    // Delete refresh tokens, sync cursors, and the device itself
+    sqlx::query("DELETE FROM refresh_tokens WHERE device_id = ?")
         .bind(&device_id)
         .execute(&state.db)
         .await?;
 
-    // Delete all refresh tokens for this device
-    sqlx::query("DELETE FROM refresh_tokens WHERE device_id = ?")
+    sqlx::query("DELETE FROM sync_cursors WHERE device_id = ?")
+        .bind(&device_id)
+        .execute(&state.db)
+        .await?;
+
+    sqlx::query("DELETE FROM devices WHERE id = ?")
         .bind(&device_id)
         .execute(&state.db)
         .await?;
