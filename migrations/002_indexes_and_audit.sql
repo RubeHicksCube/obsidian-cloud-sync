@@ -6,10 +6,6 @@ CREATE INDEX IF NOT EXISTS idx_devices_user_id ON devices(user_id);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_hash ON refresh_tokens(token_hash);
 
--- Account lockout columns
-ALTER TABLE users ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE users ADD COLUMN locked_until INTEGER;
-
 -- Audit log table
 CREATE TABLE IF NOT EXISTS audit_log (
     id TEXT PRIMARY KEY,

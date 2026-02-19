@@ -418,53 +418,6 @@ ok
 
 > **Note:** Make sure `client_max_body_size` in your nginx config matches or exceeds your `MAX_UPLOAD_SIZE_MB` setting. Otherwise, large file uploads will be rejected by nginx before they reach your server.
 
-### Using Cloudflare Tunnels (Recommended for Remote Access)
-
-Cloudflare Tunnels provide HTTPS with a custom domain without opening any ports on your server. This is the simplest way to securely expose your ObsidianCloudSync server to the internet.
-
-**Step 1.** Create a Cloudflare account and add your domain at [https://dash.cloudflare.com](https://dash.cloudflare.com).
-
-**Step 2.** Go to **Zero Trust** > **Networks** > **Tunnels** and create a new tunnel.
-
-**Step 3.** Choose **Cloudflared** as the connector. Cloudflare will give you a tunnel token that looks like:
-
-```
-eyJhIjoiNGY4...long-base64-string
-```
-
-**Step 4.** Configure a public hostname for your tunnel:
-- **Subdomain**: `sync` (or whatever you prefer)
-- **Domain**: Select your domain
-- **Service**: `http://obsidian-cloudsync:8443`
-
-**Step 5.** Add the tunnel token to your `.env` file:
-
-```
-CLOUDFLARE_TUNNEL_TOKEN=eyJhIjoiNGY4...your-token-here
-```
-
-**Step 6.** Start the server with the Cloudflare profile:
-
-```bash
-docker compose --profile cloudflare up -d
-```
-
-**Step 7.** Verify your tunnel is working:
-
-```bash
-curl https://sync.yourdomain.com/api/health
-```
-
-Expected output:
-
-```
-ok
-```
-
-Your server is now accessible at `https://sync.yourdomain.com` with full HTTPS encryption provided by Cloudflare.
-
-> **Note:** If you do not need Cloudflare Tunnels, simply run `docker compose up -d` without the `--profile cloudflare` flag. The cloudflared container will not start.
-
 ### Enabling HTTPS Without a Reverse Proxy
 
 ObsidianCloudSync itself does not handle TLS termination. For HTTPS you need either:

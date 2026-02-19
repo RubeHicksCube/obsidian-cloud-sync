@@ -77,6 +77,10 @@ async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         tracing::info!("Migration {name} complete.");
     }
 
+    // Safe column additions (idempotent — silently ignores if column already exists)
+    add_column_if_missing(pool, "users", "failed_attempts", "INTEGER NOT NULL DEFAULT 0").await;
+    add_column_if_missing(pool, "users", "locked_until", "INTEGER").await;
+
     Ok(())
 }
 
@@ -94,6 +98,27 @@ fn collect_migration_files() -> Vec<(String, String)> {
     ];
     migrations.sort_by(|a, b| a.0.cmp(&b.0));
     migrations
+}
+
+async fn add_column_if_missing(pool: &SqlitePool, table: &str, column: &str, col_type: &str) {
+    let check = format!(
+        "SELECT COUNT(*) FROM pragma_table_info('{}') WHERE name = '{}'",
+        table, column
+    );
+    let exists: bool = sqlx::query_scalar(&check)
+        .fetch_one(pool)
+        .await
+        .map(|count: bool| count)
+        .unwrap_or(false);
+
+    if !exists {
+        let alter = format!("ALTER TABLE {} ADD COLUMN {} {}", table, column, col_type);
+        if let Err(e) = sqlx::query(&alter).execute(pool).await {
+            tracing::warn!("Failed to add column {}.{}: {}", table, column, e);
+        } else {
+            tracing::info!("Added column {}.{}", table, column);
+        }
+    }
 }
 
 async fn seed_default_settings(pool: &SqlitePool) -> Result<(), sqlx::Error> {

@@ -23,8 +23,6 @@ pub struct Config {
     pub require_encryption: bool,
     // Logging
     pub log_level: String,
-    // Cloudflare
-    pub cloudflare_tunnel_token: Option<String>,
 }
 
 impl Config {
@@ -34,13 +32,9 @@ impl Config {
             database_url: env::var("DATABASE_URL")
                 .unwrap_or_else(|_| "sqlite:data/obsidian_sync.db".into()),
             data_dir: env::var("DATA_DIR").unwrap_or_else(|_| "data".into()),
-            jwt_secret: {
-                let secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
-                if secret.len() < 32 {
-                    panic!("JWT_SECRET must be at least 32 characters for adequate security");
-                }
-                secret
-            },
+            jwt_secret: env::var("JWT_SECRET").expect(
+                "JWT_SECRET must be set (at least 32 characters recommended)",
+            ),
             access_token_expiry_secs: env::var("ACCESS_TOKEN_EXPIRY_SECS")
                 .ok()
                 .and_then(|v| v.parse().ok())
@@ -90,7 +84,6 @@ impl Config {
                 .map(|v| v == "true" || v == "1")
                 .unwrap_or(false),
             log_level: env::var("LOG_LEVEL").unwrap_or_else(|_| "info".into()),
-            cloudflare_tunnel_token: env::var("CLOUDFLARE_TUNNEL_TOKEN").ok(),
         }
     }
 }

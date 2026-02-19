@@ -26,15 +26,3 @@ services:
       retries: 3
       start_period: 10s
     restart: unless-stopped
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    command: tunnel run
-    environment:
-      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
-    depends_on:
-      obsidian-cloudsync:
-        condition: service_healthy
-    restart: unless-stopped
-    profiles:
-      - cloudflare
