@@ -125,6 +125,7 @@ pub async fn upload(
     let storage = BlobStorage::new(&state.config.data_dir);
     let mut file_path: Option<String> = None;
     let mut file_data: Option<Vec<u8>> = None;
+    let mut plaintext_hash: Option<String> = None;
 
     while let Some(field) = multipart
         .next_field()
@@ -139,6 +140,14 @@ pub async fn upload(
                         .text()
                         .await
                         .map_err(|e| AppError::BadRequest(format!("Invalid path field: {e}")))?,
+                );
+            }
+            "hash" => {
+                plaintext_hash = Some(
+                    field
+                        .text()
+                        .await
+                        .map_err(|e| AppError::BadRequest(format!("Invalid hash field: {e}")))?,
                 );
             }
             "file" => {
@@ -164,7 +173,11 @@ pub async fn upload(
     check_encryption_enforcement(&file_data, state.config.require_encryption)?;
 
     let size = file_data.len() as i64;
-    let (hash, blob_path) = storage.store(&claims.sub, &file_data).await?;
+    let (_blob_hash, blob_path) = storage.store(&claims.sub, &file_data).await?;
+    // Use the client-provided plaintext hash for delta comparison.
+    // This is critical when encryption is enabled: the blob hash is of
+    // encrypted data, but the client manifest hashes plaintext content.
+    let hash = plaintext_hash.unwrap_or(_blob_hash);
     let blob_path_str = blob_path.to_string_lossy().to_string();
     let now = Utc::now().timestamp();
 
@@ -288,8 +301,9 @@ pub async fn upload_batch(
     let mut results = Vec::new();
     let now = Utc::now().timestamp();
 
-    // Parse all fields: expect pairs of path_N and file_N
+    // Parse all fields: expect pairs of path_N, hash_N, and file_N
     let mut paths: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut hashes: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut datas: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
 
     while let Some(field) = multipart
@@ -304,6 +318,12 @@ pub async fn upload_batch(
                 .await
                 .map_err(|e| AppError::BadRequest(e.to_string()))?;
             paths.insert(idx.to_string(), text);
+        } else if let Some(idx) = name.strip_prefix("hash_") {
+            let text = field
+                .text()
+                .await
+                .map_err(|e| AppError::BadRequest(e.to_string()))?;
+            hashes.insert(idx.to_string(), text);
         } else if let Some(idx) = name.strip_prefix("file_") {
             let bytes = field
                 .bytes()
@@ -329,7 +349,8 @@ pub async fn upload_batch(
         check_encryption_enforcement(file_data, state.config.require_encryption)?;
 
         let size = file_data.len() as i64;
-        let (hash, blob_path) = storage.store(&claims.sub, file_data).await?;
+        let (_blob_hash, blob_path) = storage.store(&claims.sub, file_data).await?;
+        let hash = hashes.get(idx).cloned().unwrap_or(_blob_hash);
         let blob_path_str = blob_path.to_string_lossy().to_string();
 
         let (file_id, version) = upsert_file_record(
