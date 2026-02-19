@@ -84,6 +84,18 @@ pub async fn revoke_device(
         .execute(&state.db)
         .await?;
 
+    // Log audit event
+    crate::audit::log_event(
+        &state.db,
+        Some(&claims.sub),
+        "device_revoke",
+        Some("device"),
+        Some(&device_id),
+        None,
+        None,
+    )
+    .await;
+
     Ok(Json(
         serde_json::json!({"message": "Device revoked successfully"}),
     ))

@@ -12,11 +12,21 @@ COPY migrations/ migrations/
 RUN touch src/main.rs && cargo build --release
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app/target/release/obsidian-cloud-sync /usr/local/bin/obsidian-cloud-sync
+RUN apt-get update && apt-get install -y ca-certificates curl && rm -rf /var/lib/apt/lists/*
+
+# Non-root user
+RUN useradd -r -u 1000 -m cloudsync
+
+COPY --from=builder --chown=cloudsync:cloudsync /app/target/release/obsidian-cloud-sync /usr/local/bin/obsidian-cloud-sync
+
+USER cloudsync
 EXPOSE 8443
 ENV BIND_ADDRESS=0.0.0.0:8443
 ENV DATABASE_URL=sqlite:data/obsidian_sync.db
 ENV DATA_DIR=data
 VOLUME ["/data"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:8443/api/health || exit 1
+
 CMD ["obsidian-cloud-sync"]

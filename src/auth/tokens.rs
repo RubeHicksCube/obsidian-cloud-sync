@@ -3,6 +3,7 @@ use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation}
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
 
 use crate::config::Config;
 use crate::errors::AppError;
@@ -57,4 +58,14 @@ pub fn hash_refresh_token(token: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(token.as_bytes());
     hex::encode(hasher.finalize())
+}
+
+/// Constant-time comparison of two hex-encoded hashes.
+pub fn verify_token_hash(provided_hash: &str, stored_hash: &str) -> bool {
+    let a = provided_hash.as_bytes();
+    let b = stored_hash.as_bytes();
+    if a.len() != b.len() {
+        return false;
+    }
+    a.ct_eq(b).into()
 }

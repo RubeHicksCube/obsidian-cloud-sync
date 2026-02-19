@@ -9,6 +9,8 @@ pub enum AppError {
     Forbidden(String),
     NotFound(String),
     Conflict(String),
+    PayloadTooLarge(String),
+    TooManyRequests(String),
     Internal(String),
 }
 
@@ -20,6 +22,8 @@ impl std::fmt::Display for AppError {
             Self::Forbidden(msg) => write!(f, "Forbidden: {msg}"),
             Self::NotFound(msg) => write!(f, "Not Found: {msg}"),
             Self::Conflict(msg) => write!(f, "Conflict: {msg}"),
+            Self::PayloadTooLarge(msg) => write!(f, "Payload Too Large: {msg}"),
+            Self::TooManyRequests(msg) => write!(f, "Too Many Requests: {msg}"),
             Self::Internal(msg) => write!(f, "Internal Error: {msg}"),
         }
     }
@@ -33,6 +37,8 @@ impl IntoResponse for AppError {
             Self::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.clone()),
             Self::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
             Self::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
+            Self::PayloadTooLarge(msg) => (StatusCode::PAYLOAD_TOO_LARGE, msg.clone()),
+            Self::TooManyRequests(msg) => (StatusCode::TOO_MANY_REQUESTS, msg.clone()),
             Self::Internal(msg) => {
                 tracing::error!("Internal error: {msg}");
                 (

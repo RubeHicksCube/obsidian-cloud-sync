@@ -217,6 +217,10 @@ function renderApp(el, page, params) {
           <a href="#settings" class="${page === 'settings' ? 'active' : ''}">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
             <span>Settings</span>
+          </a>
+          <a href="#audit" class="${page === 'audit' ? 'active' : ''}">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            <span>Audit Log</span>
           </a>`) : ''}
         </nav>
         <div class="sidebar-footer">
@@ -236,6 +240,7 @@ function renderApp(el, page, params) {
     case 'devices': renderDevices(content); break;
     case 'users': state.isAdmin ? renderUsers(content) : renderDashboard(content); break;
     case 'settings': state.isAdmin ? renderSettings(content) : renderDashboard(content); break;
+    case 'audit': state.isAdmin ? renderAudit(content) : renderDashboard(content); break;
     default: renderDashboard(content);
   }
 }
@@ -514,4 +519,75 @@ async function renderSettings(el) {
   } catch (err) {
     $('#settings-content').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
   }
+}
+
+// --- Audit Log (Admin) ---
+async function renderAudit(el) {
+  el.innerHTML = html`
+    <div class="page-header"><h2>Audit Log</h2></div>
+    <div style="margin-bottom:16px;display:flex;gap:8px;align-items:center">
+      <select id="audit-action-filter" style="padding:6px 10px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg-secondary);color:var(--text)">
+        <option value="">All actions</option>
+        <option value="login">Login</option>
+        <option value="login_failed">Login Failed</option>
+        <option value="logout">Logout</option>
+        <option value="register">Register</option>
+        <option value="password_change">Password Change</option>
+        <option value="file_upload">File Upload</option>
+        <option value="file_delete">File Delete</option>
+        <option value="file_rollback">File Rollback</option>
+        <option value="device_revoke">Device Revoke</option>
+        <option value="user_create">User Create</option>
+        <option value="user_delete">User Delete</option>
+        <option value="settings_change">Settings Change</option>
+      </select>
+      <button class="btn btn-outline btn-sm" id="audit-refresh-btn">Refresh</button>
+    </div>
+    <div id="audit-content"><div class="spinner"></div></div>
+    <div id="audit-pagination" style="margin-top:12px;display:flex;gap:8px;align-items:center"></div>`;
+
+  let currentPage = 1;
+
+  async function loadAudit(page) {
+    currentPage = page;
+    const filter = $('#audit-action-filter').value;
+    let url = '/admin/audit?page=' + page + '&limit=50';
+    if (filter) url += '&action=' + encodeURIComponent(filter);
+    try {
+      const data = await api(url);
+      if (!data || !data.entries || data.entries.length === 0) {
+        $('#audit-content').innerHTML = '<div class="empty-state"><p>No audit entries found.</p></div>';
+        $('#audit-pagination').innerHTML = '';
+        return;
+      }
+      $('#audit-content').innerHTML = html`
+        <div class="table-wrap"><table>
+          <thead><tr><th>Time</th><th>Action</th><th>User</th><th>Target</th><th>Details</th></tr></thead>
+          <tbody>${raw(data.entries.map(e => html`
+            <tr>
+              <td style="white-space:nowrap">${formatTime(e.created_at)}</td>
+              <td><span class="badge">${e.action}</span></td>
+              <td style="font-family:monospace;font-size:12px">${e.user_id ? e.user_id.slice(0, 8) + '...' : '\u2014'}</td>
+              <td>${e.target_type ? e.target_type + (e.target_id ? ':' + e.target_id.slice(0, 8) : '') : '\u2014'}</td>
+              <td style="font-size:12px">${e.details || '\u2014'}</td>
+            </tr>`).join(''))}</tbody>
+        </table></div>`;
+
+      const totalPages = Math.ceil(data.total / data.limit);
+      let paginationHtml = '';
+      if (totalPages > 1) {
+        if (currentPage > 1) paginationHtml += '<button class="btn btn-outline btn-sm" onclick="auditPage(' + (currentPage - 1) + ')">Prev</button>';
+        paginationHtml += '<span>Page ' + currentPage + ' of ' + totalPages + '</span>';
+        if (currentPage < totalPages) paginationHtml += '<button class="btn btn-outline btn-sm" onclick="auditPage(' + (currentPage + 1) + ')">Next</button>';
+      }
+      $('#audit-pagination').innerHTML = paginationHtml;
+    } catch (err) {
+      $('#audit-content').innerHTML = '<div class="error-msg">' + esc(err.message) + '</div>';
+    }
+  }
+
+  window.auditPage = (p) => loadAudit(p);
+  $('#audit-action-filter').onchange = () => loadAudit(1);
+  $('#audit-refresh-btn').onclick = () => loadAudit(currentPage);
+  loadAudit(1);
 }

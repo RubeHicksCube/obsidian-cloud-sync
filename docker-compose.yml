@@ -1,5 +1,5 @@
 services:
-  obsidian-sync:
+  obsidian-cloudsync:
     build: .
     ports:
       - "8443:8443"
@@ -12,4 +12,29 @@ services:
       - JWT_SECRET=${JWT_SECRET:-change-me-to-a-random-secret}
       - RUST_LOG=info
       - REGISTRATION_OPEN=true
+      - RATE_LIMIT_RPM=${RATE_LIMIT_RPM:-60}
+      - LOCKOUT_THRESHOLD=${LOCKOUT_THRESHOLD:-5}
+      - LOCKOUT_DURATION_SECS=${LOCKOUT_DURATION_SECS:-900}
+      - MAX_STORAGE_PER_USER_MB=${MAX_STORAGE_PER_USER_MB:-5000}
+      - MAX_VERSIONS_PER_FILE=${MAX_VERSIONS_PER_FILE:-50}
+      - VERSION_RETENTION_DAYS=${VERSION_RETENTION_DAYS:-90}
+      - REQUIRE_ENCRYPTION=${REQUIRE_ENCRYPTION:-false}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8443/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      obsidian-cloudsync:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - cloudflare

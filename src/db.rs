@@ -25,28 +25,75 @@ pub async fn init_pool(config: &Config) -> Result<SqlitePool, sqlx::Error> {
     Ok(pool)
 }
 
+async fn ensure_migrations_table(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS _migrations (
+            name TEXT PRIMARY KEY,
+            applied_at INTEGER NOT NULL
+        )",
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
-    let migration_sql = include_str!("../migrations/001_initial.sql");
+    ensure_migrations_table(pool).await?;
 
-    // Check if migrations have already been applied by checking for users table
-    let table_exists: bool =
-        sqlx::query_scalar("SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='users'")
-            .fetch_one(pool)
-            .await?;
+    // Collect migration files sorted by name
+    let migration_files = collect_migration_files();
 
-    if !table_exists {
-        tracing::info!("Running initial migration...");
+    for (name, sql) in &migration_files {
+        // Check if already applied
+        let applied: bool = sqlx::query_scalar(
+            "SELECT COUNT(*) > 0 FROM _migrations WHERE name = ?",
+        )
+        .bind(name)
+        .fetch_one(pool)
+        .await?;
+
+        if applied {
+            continue;
+        }
+
+        tracing::info!("Running migration: {name}");
+
         // Execute each statement separately
-        for statement in migration_sql.split(';') {
+        for statement in sql.split(';') {
             let trimmed = statement.trim();
             if !trimmed.is_empty() {
                 sqlx::query(trimmed).execute(pool).await?;
             }
         }
-        tracing::info!("Migration complete.");
+
+        // Record migration
+        let now = chrono::Utc::now().timestamp();
+        sqlx::query("INSERT INTO _migrations (name, applied_at) VALUES (?, ?)")
+            .bind(name)
+            .bind(now)
+            .execute(pool)
+            .await?;
+
+        tracing::info!("Migration {name} complete.");
     }
 
     Ok(())
+}
+
+/// Collect migration SQL files, sorted by filename.
+fn collect_migration_files() -> Vec<(String, String)> {
+    let mut migrations = vec![
+        (
+            "001_initial.sql".to_string(),
+            include_str!("../migrations/001_initial.sql").to_string(),
+        ),
+        (
+            "002_indexes_and_audit.sql".to_string(),
+            include_str!("../migrations/002_indexes_and_audit.sql").to_string(),
+        ),
+    ];
+    migrations.sort_by(|a, b| a.0.cmp(&b.0));
+    migrations
 }
 
 async fn seed_default_settings(pool: &SqlitePool) -> Result<(), sqlx::Error> {

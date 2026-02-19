@@ -192,6 +192,18 @@ pub async fn rollback(
     .execute(&state.db)
     .await?;
 
+    // Log audit event
+    crate::audit::log_event(
+        &state.db,
+        Some(&claims.sub),
+        "file_rollback",
+        Some("file"),
+        Some(&file_id),
+        Some(&format!("version={}", req.version)),
+        None,
+    )
+    .await;
+
     // Return updated file info
     let updated: (String, String, i64, String, i64, bool, i64, i64) = sqlx::query_as(
         "SELECT id, path, current_version, hash, size, is_deleted, created_at, updated_at FROM files WHERE id = ?",
