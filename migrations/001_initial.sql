@@ -1,4 +1,4 @@
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     username TEXT UNIQUE NOT NULL,
     email TEXT UNIQUE,
@@ -8,7 +8,7 @@ CREATE TABLE users (
     updated_at INTEGER NOT NULL
 );
 
-CREATE TABLE devices (
+CREATE TABLE IF NOT EXISTS devices (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
@@ -18,7 +18,7 @@ CREATE TABLE devices (
     revoked BOOLEAN NOT NULL DEFAULT FALSE
 );
 
-CREATE TABLE refresh_tokens (
+CREATE TABLE IF NOT EXISTS refresh_tokens (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
@@ -27,7 +27,7 @@ CREATE TABLE refresh_tokens (
     created_at INTEGER NOT NULL
 );
 
-CREATE TABLE files (
+CREATE TABLE IF NOT EXISTS files (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     path TEXT NOT NULL,
@@ -40,7 +40,7 @@ CREATE TABLE files (
     UNIQUE(user_id, path)
 );
 
-CREATE TABLE file_versions (
+CREATE TABLE IF NOT EXISTS file_versions (
     id TEXT PRIMARY KEY,
     file_id TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE,
     version INTEGER NOT NULL,
@@ -52,7 +52,7 @@ CREATE TABLE file_versions (
     UNIQUE(file_id, version)
 );
 
-CREATE TABLE sync_cursors (
+CREATE TABLE IF NOT EXISTS sync_cursors (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
     last_sync_at INTEGER NOT NULL,
@@ -60,7 +60,7 @@ CREATE TABLE sync_cursors (
     PRIMARY KEY (user_id, device_id)
 );
 
-CREATE TABLE server_settings (
+CREATE TABLE IF NOT EXISTS server_settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
