@@ -516,3 +516,28 @@ pub async fn complete(
         server_version,
     }))
 }
+
+/// Correct a stale hash in the files table without re-uploading file data.
+/// Used when the client detects that downloaded content is identical to its
+/// local copy — the server's stored hash was wrong (e.g. encrypted blob hash
+/// instead of plaintext hash).
+pub async fn fix_hash(
+    State(state): State<AppState>,
+    claims: axum::Extension<Claims>,
+    Json(req): Json<FixHashRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let result = sqlx::query(
+        "UPDATE files SET hash = ? WHERE id = ? AND user_id = ?",
+    )
+    .bind(&req.hash)
+    .bind(&req.file_id)
+    .bind(&claims.sub)
+    .execute(&state.db)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("File not found".into()));
+    }
+
+    Ok(Json(serde_json::json!({ "message": "Hash updated" })))
+}

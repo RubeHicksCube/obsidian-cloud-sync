@@ -52,6 +52,12 @@ pub struct CompleteRequest {
     pub device_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct FixHashRequest {
+    pub file_id: String,
+    pub hash: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct CompleteResponse {
     pub message: String,

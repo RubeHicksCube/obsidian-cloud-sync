@@ -79,6 +79,7 @@ async fn main() {
         .route("/api/sync/download/{id}", get(sync::handlers::download))
         .route("/api/sync/delete/{id}", delete(sync::handlers::delete_file))
         .route("/api/sync/complete", post(sync::handlers::complete))
+        .route("/api/sync/fix-hash", post(sync::handlers::fix_hash))
         .route("/api/files", get(files::handlers::list_files))
         .route(
             "/api/files/{id}/versions",
