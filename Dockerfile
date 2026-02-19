@@ -19,11 +19,15 @@ RUN useradd -r -u 1000 -m cloudsync
 
 COPY --from=builder --chown=cloudsync:cloudsync /app/target/release/obsidian-cloud-sync /usr/local/bin/obsidian-cloud-sync
 
+# Create data directory with correct ownership before switching to non-root
+RUN mkdir -p /data && chown cloudsync:cloudsync /data
+
+WORKDIR /app
 USER cloudsync
 EXPOSE 8443
 ENV BIND_ADDRESS=0.0.0.0:8443
-ENV DATABASE_URL=sqlite:data/obsidian_sync.db
-ENV DATA_DIR=data
+ENV DATABASE_URL=sqlite:/data/obsidian_sync.db
+ENV DATA_DIR=/data
 VOLUME ["/data"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
