@@ -77,6 +77,7 @@ async fn main() {
         .route("/api/sync/upload", post(sync::handlers::upload))
         .route("/api/sync/upload/batch", post(sync::handlers::upload_batch))
         .route("/api/sync/download/{id}", get(sync::handlers::download))
+        .route("/api/sync/delete/{id}", delete(sync::handlers::delete_file))
         .route("/api/sync/complete", post(sync::handlers::complete))
         .route("/api/files", get(files::handlers::list_files))
         .route(

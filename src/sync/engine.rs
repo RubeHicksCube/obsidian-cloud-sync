@@ -6,6 +6,7 @@ use crate::sync::models::*;
 pub async fn compute_delta(
     db: &SqlitePool,
     user_id: &str,
+    device_id: &str,
     client_files: &[FileManifestEntry],
 ) -> Result<Vec<SyncInstruction>, AppError> {
     let mut instructions = Vec::new();
@@ -32,6 +33,15 @@ pub async fn compute_delta(
     let client_paths: std::collections::HashSet<&str> =
         client_files.iter().map(|f| f.path.as_str()).collect();
 
+    // Check if this device has synced before (has a sync cursor)
+    let has_synced_before: bool = sqlx::query_scalar(
+        "SELECT COUNT(*) > 0 FROM sync_cursors WHERE user_id = ? AND device_id = ?",
+    )
+    .bind(user_id)
+    .bind(device_id)
+    .fetch_one(db)
+    .await?;
+
     // Compare each client file against server state
     for client_file in client_files {
         match server_map.get(&client_file.path) {
@@ -47,10 +57,10 @@ pub async fn compute_delta(
             }
             Some((file_id, server_hash, _size, is_deleted, updated_at)) => {
                 if *is_deleted {
-                    // Server has it deleted, client still has it → conflict
+                    // Server has it deleted, client still has it → upload (client wins)
                     instructions.push(SyncInstruction {
                         path: client_file.path.clone(),
-                        action: SyncAction::Conflict,
+                        action: SyncAction::Upload,
                         file_id: Some(file_id.clone()),
                         server_hash: Some(server_hash.clone()),
                         server_modified_at: Some(*updated_at),
@@ -91,9 +101,24 @@ pub async fn compute_delta(
         }
     }
 
-    // Files on server but not on client → download (or delete if client should remove)
+    // Files on server but not on client
     for (path, (file_id, hash, _size, is_deleted, updated_at)) in &server_map {
-        if !client_paths.contains(path.as_str()) && !is_deleted {
+        if client_paths.contains(path.as_str()) || *is_deleted {
+            continue;
+        }
+
+        if has_synced_before {
+            // Device has synced before but doesn't have this file →
+            // it was deleted locally. Mark as deleted on server.
+            instructions.push(SyncInstruction {
+                path: path.clone(),
+                action: SyncAction::Delete,
+                file_id: Some(file_id.clone()),
+                server_hash: Some(hash.clone()),
+                server_modified_at: Some(*updated_at),
+            });
+        } else {
+            // First sync for this device → download everything from server
             instructions.push(SyncInstruction {
                 path: path.clone(),
                 action: SyncAction::Download,

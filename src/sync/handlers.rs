@@ -103,7 +103,9 @@ pub async fn delta(
     claims: axum::Extension<Claims>,
     Json(req): Json<DeltaRequest>,
 ) -> Result<Json<DeltaResponse>, AppError> {
-    let instructions = compute_delta(&state.db, &claims.sub, &req.files).await?;
+    let device_id = req.device_id.as_deref().unwrap_or(&claims.device_id);
+    let instructions =
+        compute_delta(&state.db, &claims.sub, device_id, &req.files).await?;
     let server_time = Utc::now().timestamp();
 
     Ok(Json(DeltaResponse {
@@ -411,6 +413,51 @@ pub async fn download(
         ],
         data,
     ))
+}
+
+/// Mark a file as deleted on the server (soft delete).
+pub async fn delete_file(
+    State(state): State<AppState>,
+    claims: axum::Extension<Claims>,
+    Path(file_id): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let now = Utc::now().timestamp();
+
+    let result = sqlx::query(
+        "UPDATE files SET is_deleted = TRUE, updated_at = ? WHERE id = ? AND user_id = ?",
+    )
+    .bind(now)
+    .bind(&file_id)
+    .bind(&claims.sub)
+    .execute(&state.db)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("File not found".into()));
+    }
+
+    // Notify other devices
+    let path: Option<(String,)> =
+        sqlx::query_as("SELECT path FROM files WHERE id = ?")
+            .bind(&file_id)
+            .fetch_optional(&state.db)
+            .await?;
+    if let Some((file_path,)) = path {
+        state.notify_sync_update(&claims.sub, &claims.device_id, &file_path, "delete");
+    }
+
+    crate::audit::log_event(
+        &state.db,
+        Some(&claims.sub),
+        "file_delete",
+        Some("file"),
+        Some(&file_id),
+        None,
+        None,
+    )
+    .await;
+
+    Ok(Json(serde_json::json!({ "message": "File deleted" })))
 }
 
 pub async fn complete(

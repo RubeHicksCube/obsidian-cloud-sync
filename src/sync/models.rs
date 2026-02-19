@@ -11,6 +11,9 @@ pub struct FileManifestEntry {
 #[derive(Debug, Deserialize)]
 pub struct DeltaRequest {
     pub files: Vec<FileManifestEntry>,
+    /// If provided, used to determine if missing files were deleted locally
+    #[serde(default)]
+    pub device_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
