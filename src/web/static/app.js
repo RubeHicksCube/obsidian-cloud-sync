@@ -104,8 +104,18 @@ function esc(str) {
     .replace(/'/g, '&#39;');
 }
 
+// Mark a string as safe HTML (won't be escaped by the html template tag)
+function raw(str) {
+  const s = new String(str ?? '');
+  s.__raw = true;
+  return s;
+}
+
 function html(strings, ...vals) {
-  return strings.reduce((acc, s, i) => acc + s + esc(vals[i] ?? ''), '');
+  return strings.reduce((acc, s, i) => {
+    const v = vals[i] ?? '';
+    return acc + s + (v.__raw ? String(v) : esc(v));
+  }, '');
 }
 
 // --- Router ---
@@ -138,11 +148,11 @@ function renderLogin(el) {
               <label>Username</label>
               <input name="username" type="text" required autocomplete="username">
             </div>
-            ${isRegister ? html`
+            ${isRegister ? raw(html`
             <div class="form-group">
               <label>Email (optional)</label>
               <input name="email" type="email" autocomplete="email">
-            </div>` : ''}
+            </div>`) : ''}
             <div class="form-group">
               <label>Password</label>
               <input name="password" type="password" required autocomplete="${isRegister ? 'new-password' : 'current-password'}">
@@ -199,7 +209,7 @@ function renderApp(el, page, params) {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
             <span>Devices</span>
           </a>
-          ${state.isAdmin ? html`
+          ${state.isAdmin ? raw(html`
           <a href="#users" class="${page === 'users' ? 'active' : ''}">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
             <span>Users</span>
@@ -207,7 +217,7 @@ function renderApp(el, page, params) {
           <a href="#settings" class="${page === 'settings' ? 'active' : ''}">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
             <span>Settings</span>
-          </a>` : ''}
+          </a>`) : ''}
         </nav>
         <div class="sidebar-footer">
           <span class="user-name">${state.username || 'User'}</span>
@@ -290,14 +300,14 @@ async function renderFiles(el, params) {
     $('#files-content').innerHTML = html`
       <div class="table-wrap"><table>
         <thead><tr><th>Path</th><th>Size</th><th>Version</th><th>Updated</th><th></th></tr></thead>
-        <tbody>${files.map(f => html`
+        <tbody>${raw(files.map(f => html`
           <tr>
             <td>${f.path}</td>
             <td>${formatBytes(f.size)}</td>
             <td>v${f.current_version}</td>
             <td>${formatTime(f.updated_at)}</td>
             <td><a href="#files/${f.id}" class="btn btn-outline btn-sm">Versions</a></td>
-          </tr>`).join('')}
+          </tr>`).join(''))}
         </tbody>
       </table></div>`;
   } catch (err) {
@@ -321,14 +331,14 @@ async function renderFileVersions(el, fileId) {
     $('#versions-content').innerHTML = html`
       <div class="table-wrap"><table>
         <thead><tr><th>Version</th><th>Hash</th><th>Size</th><th>Created</th><th></th></tr></thead>
-        <tbody>${versions.map(v => html`
+        <tbody>${raw(versions.map(v => html`
           <tr>
             <td>v${v.version}</td>
             <td style="font-family:monospace;font-size:12px">${v.hash.slice(0, 12)}...</td>
             <td>${formatBytes(v.size)}</td>
             <td>${formatTime(v.created_at)}</td>
             <td><button class="btn btn-outline btn-sm" onclick="rollback('${fileId}', ${v.version})">Rollback</button></td>
-          </tr>`).join('')}
+          </tr>`).join(''))}
         </tbody>
       </table></div>`;
     window.rollback = async (fid, ver) => {
@@ -357,15 +367,15 @@ async function renderDevices(el) {
     $('#devices-content').innerHTML = html`
       <div class="table-wrap"><table>
         <thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Last Seen</th><th>Created</th><th></th></tr></thead>
-        <tbody>${devices.map(d => html`
+        <tbody>${raw(devices.map(d => html`
           <tr>
             <td>${d.name}</td>
             <td>${d.device_type || '—'}</td>
-            <td>${d.revoked ? '<span class="badge badge-danger">Revoked</span>' : '<span class="badge badge-success">Active</span>'}</td>
+            <td>${raw(d.revoked ? '<span class="badge badge-danger">Revoked</span>' : '<span class="badge badge-success">Active</span>')}</td>
             <td>${formatTime(d.last_seen_at)}</td>
             <td>${formatTime(d.created_at)}</td>
-            <td>${!d.revoked ? `<button class="btn btn-danger btn-sm" onclick="revokeDevice('${d.id}')">Revoke</button>` : ''}</td>
-          </tr>`).join('')}
+            <td>${raw(!d.revoked ? `<button class="btn btn-danger btn-sm" onclick="revokeDevice('${esc(d.id)}')">Revoke</button>` : '')}</td>
+          </tr>`).join(''))}
         </tbody>
       </table></div>`;
     window.revokeDevice = async (id) => {
@@ -394,16 +404,16 @@ async function renderUsers(el) {
     $('#users-content').innerHTML = html`
       <div class="table-wrap"><table>
         <thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Files</th><th>Devices</th><th>Created</th><th></th></tr></thead>
-        <tbody>${users.map(u => html`
+        <tbody>${raw(users.map(u => html`
           <tr>
             <td>${u.username}</td>
             <td>${u.email || '—'}</td>
-            <td>${u.is_admin ? '<span class="badge badge-warning">Admin</span>' : '<span class="badge badge-success">User</span>'}</td>
+            <td>${raw(u.is_admin ? '<span class="badge badge-warning">Admin</span>' : '<span class="badge badge-success">User</span>')}</td>
             <td>${u.file_count}</td>
             <td>${u.device_count}</td>
             <td>${formatTime(u.created_at)}</td>
-            <td><button class="btn btn-danger btn-sm" onclick="deleteUser('${u.id}','${u.username}')">Delete</button></td>
-          </tr>`).join('')}
+            <td>${raw(`<button class="btn btn-danger btn-sm" onclick="deleteUser('${esc(u.id)}','${esc(u.username)}')">Delete</button>`)}</td>
+          </tr>`).join(''))}
         </tbody>
       </table></div>`;
   } catch (err) {
