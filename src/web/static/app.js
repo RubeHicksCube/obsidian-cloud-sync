@@ -708,15 +708,15 @@ async function renderSettings(el) {
               <option value="false" ${s.registration_open === 'false' ? 'selected' : ''}>Closed</option>
             </select>
           </div>
-          <div class="form-group">
-            <label>Data Preservation</label>
-            <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
-              <label style="display:flex;align-items:flex-start;gap:10px;cursor:default;opacity:0.6">
-                <input type="checkbox" checked disabled style="margin-top:3px;flex-shrink:0">
+          <div style="margin-bottom:20px;border-top:1px solid var(--border);padding-top:16px">
+            <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:12px">Data Preservation</div>
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <label style="display:flex;align-items:flex-start;gap:10px;margin:0;font-size:14px;font-weight:normal;color:var(--text);opacity:0.55;cursor:default">
+                <input type="checkbox" checked disabled style="width:auto;flex-shrink:0;margin-top:3px">
                 <span>Current version of every file is always preserved — the pruner never deletes the active version (enforced in server code, cannot be disabled)</span>
               </label>
-              <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
-                <input type="checkbox" name="keep_archive_versions" ${s.keep_archive_versions === 'true' ? 'checked' : ''} style="margin-top:3px;flex-shrink:0">
+              <label style="display:flex;align-items:flex-start;gap:10px;margin:0;font-size:14px;font-weight:normal;color:var(--text);cursor:pointer">
+                <input type="checkbox" name="keep_archive_versions" ${s.keep_archive_versions === 'true' ? 'checked' : ''} style="width:auto;flex-shrink:0;margin-top:3px">
                 <span>Preserve all versions of archived (deleted) files — disables automatic version pruning for files in the Archive</span>
               </label>
             </div>
