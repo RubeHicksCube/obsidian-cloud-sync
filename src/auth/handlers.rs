@@ -40,6 +40,8 @@ pub struct AuthResponse {
     pub user_id: String,
     pub device_id: String,
     pub is_admin: bool,
+    /// Account-wide encryption salt. Empty string means not yet configured.
+    pub encryption_salt: String,
 }
 
 /// Maximum password length to prevent Argon2 DoS with huge passwords.
@@ -194,6 +196,7 @@ pub async fn register(
         user_id,
         device_id,
         is_admin,
+        encryption_salt: String::new(),
     }))
 }
 
@@ -201,14 +204,15 @@ pub async fn login(
     State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
-    let row: Option<(String, String, bool, i32, Option<i64>)> = sqlx::query_as(
-        "SELECT id, password_hash, is_admin, failed_attempts, locked_until FROM users WHERE username = ?",
+    let row: Option<(String, String, bool, i32, Option<i64>, String)> = sqlx::query_as(
+        "SELECT id, password_hash, is_admin, failed_attempts, locked_until, \
+         COALESCE(encryption_salt, '') FROM users WHERE username = ?",
     )
     .bind(&req.username)
     .fetch_optional(&state.db)
     .await?;
 
-    let (user_id, password_hash, is_admin, failed_attempts, locked_until) =
+    let (user_id, password_hash, is_admin, failed_attempts, locked_until, encryption_salt) =
         row.ok_or_else(|| AppError::Unauthorized("Invalid credentials".into()))?;
 
     // Check account lockout
@@ -323,6 +327,7 @@ pub async fn login(
         user_id,
         device_id,
         is_admin,
+        encryption_salt,
     }))
 }
 
@@ -356,10 +361,12 @@ pub async fn refresh(
     let device_id = device_id.clone();
 
     // Get user info
-    let is_admin: bool = sqlx::query_scalar("SELECT is_admin FROM users WHERE id = ?")
-        .bind(&user_id)
-        .fetch_one(&state.db)
-        .await?;
+    let (is_admin, encryption_salt): (bool, String) = sqlx::query_as(
+        "SELECT is_admin, COALESCE(encryption_salt, '') FROM users WHERE id = ?",
+    )
+    .bind(&user_id)
+    .fetch_one(&state.db)
+    .await?;
 
     // Delete old refresh token
     sqlx::query("DELETE FROM refresh_tokens WHERE id = ?")
@@ -391,6 +398,7 @@ pub async fn refresh(
         user_id,
         device_id,
         is_admin,
+        encryption_salt,
     }))
 }
 
@@ -428,11 +436,15 @@ pub async fn logout(
 #[derive(Deserialize)]
 pub struct SetEncryptionSaltRequest {
     pub salt: String,
+    /// If true, overwrite any existing salt (used when changing passphrase).
+    /// If false (default), only sets when no salt exists — first device wins.
+    #[serde(default)]
+    pub force: bool,
 }
 
 /// Store the account-wide encryption salt.
-/// Only accepted when the account has no salt yet (first device wins).
-/// All subsequent devices receive the salt via the delta response.
+/// Without force: only sets when no salt exists (first-device-wins, safe for initial setup).
+/// With force: overwrites the existing salt (required when changing passphrase).
 pub async fn set_encryption_salt(
     State(state): State<AppState>,
     claims: axum::Extension<crate::auth::tokens::Claims>,
@@ -447,15 +459,23 @@ pub async fn set_encryption_salt(
         ));
     }
 
-    // Only set if the account has no salt yet — first device wins.
-    sqlx::query(
-        "UPDATE users SET encryption_salt = ? \
-         WHERE id = ? AND (encryption_salt = '' OR encryption_salt IS NULL)",
-    )
-    .bind(&req.salt)
-    .bind(&claims.sub)
-    .execute(&state.db)
-    .await?;
+    if req.force {
+        sqlx::query("UPDATE users SET encryption_salt = ? WHERE id = ?")
+            .bind(&req.salt)
+            .bind(&claims.sub)
+            .execute(&state.db)
+            .await?;
+    } else {
+        // First-device-wins: only set when no salt exists yet.
+        sqlx::query(
+            "UPDATE users SET encryption_salt = ? \
+             WHERE id = ? AND (encryption_salt = '' OR encryption_salt IS NULL)",
+        )
+        .bind(&req.salt)
+        .bind(&claims.sub)
+        .execute(&state.db)
+        .await?;
+    }
 
     Ok(Json(MessageResponse {
         message: "Encryption salt stored".into(),
