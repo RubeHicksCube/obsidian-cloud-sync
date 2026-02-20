@@ -82,6 +82,8 @@ async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     add_column_if_missing(pool, "users", "locked_until", "INTEGER").await;
     // Encryption salt shared across all devices for the same account
     add_column_if_missing(pool, "users", "encryption_salt", "TEXT NOT NULL DEFAULT ''").await;
+    // Client-encrypted vault key for cross-device passphrase sharing
+    add_column_if_missing(pool, "users", "encrypted_vault_key", "TEXT").await;
 
     Ok(())
 }
@@ -96,6 +98,10 @@ fn collect_migration_files() -> Vec<(String, String)> {
         (
             "002_indexes_and_audit.sql".to_string(),
             include_str!("../migrations/002_indexes_and_audit.sql").to_string(),
+        ),
+        (
+            "003_vault_key.sql".to_string(),
+            include_str!("../migrations/003_vault_key.sql").to_string(),
         ),
     ];
     migrations.sort_by(|a, b| a.0.cmp(&b.0));
