@@ -370,8 +370,8 @@ async function renderArchive(el) {
     const dSel = $('#delete-sel-btn');
     const rAll = $('#restore-all-btn');
     const wipe = $('#wipe-archive-btn');
-    if (rSel) rSel.disabled = !hasSel;
-    if (dSel) dSel.disabled = !hasSel;
+    if (rSel) { rSel.style.display = hasAny ? '' : 'none'; rSel.disabled = !hasSel; }
+    if (dSel) { dSel.style.display = hasAny ? '' : 'none'; dSel.disabled = !hasSel; }
     if (rAll) rAll.style.display = hasAny ? '' : 'none';
     if (wipe) wipe.style.display = hasAny ? '' : 'none';
   }
@@ -425,8 +425,8 @@ async function renderArchive(el) {
     <div class="page-header">
       <h2>Archive</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <button class="btn btn-outline btn-sm" id="restore-sel-btn" disabled>Restore Selected</button>
-        <button class="btn btn-danger btn-sm" id="delete-sel-btn" disabled>Delete Selected</button>
+        <button class="btn btn-outline btn-sm" id="restore-sel-btn" disabled style="display:none">Restore Selected</button>
+        <button class="btn btn-danger btn-sm" id="delete-sel-btn" disabled style="display:none">Delete Selected</button>
         <button class="btn btn-outline btn-sm" id="restore-all-btn" style="display:none">Restore All</button>
         <button class="btn btn-danger btn-sm" id="wipe-archive-btn" style="display:none">Wipe Archive</button>
       </div>
@@ -506,7 +506,7 @@ async function renderDevices(el) {
   function syncButtons() {
     const rSel = $('#remove-sel-btn');
     const rAll = $('#remove-all-btn');
-    if (rSel) rSel.disabled = selected.size === 0;
+    if (rSel) rSel.style.display = selected.size > 0 ? '' : 'none';
     if (rAll) rAll.style.display = devices.length > 0 ? '' : 'none';
   }
 
@@ -560,7 +560,7 @@ async function renderDevices(el) {
     <div class="page-header">
       <h2>Devices</h2>
       <div style="display:flex;gap:8px;align-items:center">
-        <button class="btn btn-danger btn-sm" id="remove-sel-btn" disabled>Remove Selected</button>
+        <button class="btn btn-danger btn-sm" id="remove-sel-btn" style="display:none">Remove Selected</button>
         <button class="btn btn-danger btn-sm" id="remove-all-btn" style="display:none">Remove All Others</button>
       </div>
     </div>
@@ -692,13 +692,14 @@ async function renderSettings(el) {
     const s = data.settings;
     $('#settings-content').innerHTML = html`
       <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius);padding:24px;">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border)">Current versions of all files are never automatically deleted — the pruner only removes older versions based on the limits below.</p>
         <form id="settings-form">
           <div class="form-group">
             <label>Max Versions Per File</label>
             <input name="max_versions_per_file" type="number" min="1" max="1000" value="${s.max_versions_per_file || 50}">
           </div>
           <div class="form-group">
-            <label>Max Version Age (days) — set to 0 to never expire</label>
+            <label>Max Version Age (days) — 0 = never expire</label>
             <input name="max_version_age_days" type="number" min="0" max="3650" value="${s.max_version_age_days !== undefined ? s.max_version_age_days : 90}">
           </div>
           <div class="form-group">
@@ -709,17 +710,11 @@ async function renderSettings(el) {
             </select>
           </div>
           <div style="margin-bottom:20px;border-top:1px solid var(--border);padding-top:16px">
-            <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:12px">Data Preservation</div>
-            <div style="display:flex;flex-direction:column;gap:12px">
-              <label style="display:flex;align-items:flex-start;gap:10px;margin:0;font-size:14px;font-weight:normal;color:var(--text);opacity:0.55;cursor:default">
-                <input type="checkbox" checked disabled style="width:auto;flex-shrink:0;margin-top:3px">
-                <span>Current version of every file is always preserved — the pruner never deletes the active version (enforced in server code, cannot be disabled)</span>
-              </label>
-              <label style="display:flex;align-items:flex-start;gap:10px;margin:0;font-size:14px;font-weight:normal;color:var(--text);cursor:pointer">
-                <input type="checkbox" name="keep_archive_versions" ${s.keep_archive_versions === 'true' ? 'checked' : ''} style="width:auto;flex-shrink:0;margin-top:3px">
-                <span>Preserve all versions of archived (deleted) files — disables automatic version pruning for files in the Archive</span>
-              </label>
-            </div>
+            <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:12px">Archive Protection</div>
+            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:14px;line-height:1.5;color:var(--text)">
+              <input type="checkbox" name="keep_archive_versions" ${s.keep_archive_versions === 'true' ? 'checked' : ''} style="width:16px;height:16px;min-width:16px;flex-shrink:0;margin-top:3px;cursor:pointer">
+              <span>Preserve all versions of archived (deleted) files — disables automatic version pruning for files in the Archive</span>
+            </label>
           </div>
           <div id="settings-msg"></div>
           <button type="submit" class="btn btn-primary">Save Settings</button>
