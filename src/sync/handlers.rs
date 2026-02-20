@@ -1,10 +1,10 @@
 use axum::{
-    body::Bytes,
     extract::{Multipart, Path, Query, State},
     http::header,
     response::IntoResponse,
     Json,
 };
+use base64::Engine as _;
 use chrono::Utc;
 use serde::Deserialize;
 use uuid::Uuid;
@@ -115,30 +115,36 @@ pub async fn delta(
     }))
 }
 
-/// Query parameters for the binary upload endpoint.
+/// JSON body for the upload endpoint.
 #[derive(Deserialize)]
-pub struct UploadQuery {
+pub struct UploadBody {
+    /// Vault-relative file path.
     pub path: String,
+    /// Optional plaintext SHA-256 hash (hex). Used for delta comparison
+    /// when encryption is enabled (blob hash ≠ plaintext hash).
     pub hash: Option<String>,
+    /// File contents, base64-encoded. Encoding avoids proxy WAF rules
+    /// that inspect or block binary (application/octet-stream) bodies.
+    pub data: String,
 }
 
-/// Upload a file as a raw binary POST body.
-/// Path and optional plaintext hash are passed as query parameters.
-/// This avoids multipart parsing entirely and works reliably through
-/// any proxy or CDN tunnel.
+/// Upload a file as base64-encoded data inside a JSON body.
+/// Using JSON bypasses Cloudflare WAF rules that block/modify
+/// application/octet-stream or multipart POST bodies.
 pub async fn upload(
     State(state): State<AppState>,
     claims: axum::Extension<Claims>,
-    Query(query): Query<UploadQuery>,
-    body: Bytes,
+    Json(body): Json<UploadBody>,
 ) -> Result<Json<UploadResponse>, AppError> {
     check_storage_quota(&state, &claims.sub).await?;
 
-    let file_path = validate_file_path(&query.path)?;
-    let file_data = body.to_vec();
+    let file_path = validate_file_path(&body.path)?;
+    let file_data = base64::engine::general_purpose::STANDARD
+        .decode(&body.data)
+        .map_err(|e| AppError::BadRequest(format!("Invalid base64 data: {e}")))?;
 
     if file_data.is_empty() {
-        return Err(AppError::BadRequest("Empty file body".into()));
+        return Err(AppError::BadRequest("Empty file data".into()));
     }
 
     check_encryption_enforcement(&file_data, state.config.require_encryption)?;
@@ -149,7 +155,7 @@ pub async fn upload(
     // Use the client-provided plaintext hash for delta comparison.
     // Critical when encryption is enabled: the blob hash covers encrypted
     // bytes, but the client manifest hashes plaintext content.
-    let hash = query.hash.unwrap_or(_blob_hash);
+    let hash = body.hash.unwrap_or(_blob_hash);
     let blob_path_str = blob_path.to_string_lossy().to_string();
     let now = Utc::now().timestamp();
 
