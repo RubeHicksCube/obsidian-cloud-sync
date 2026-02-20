@@ -33,14 +33,20 @@ pub async fn compute_delta(
     let client_paths: std::collections::HashSet<&str> =
         client_files.iter().map(|f| f.path.as_str()).collect();
 
-    // Check if this device has synced before (has a sync cursor)
-    let has_synced_before: bool = sqlx::query_scalar(
-        "SELECT COUNT(*) > 0 FROM sync_cursors WHERE user_id = ? AND device_id = ?",
+    // Check if this device has synced before and retrieve its last known server version.
+    // server_version is MAX(updated_at) across all files at the time of the last sync,
+    // used to distinguish files added after the device last synced (→ Download) from
+    // files the device previously knew about but is no longer reporting (→ Delete).
+    let cursor: Option<i64> = sqlx::query_scalar(
+        "SELECT server_version FROM sync_cursors WHERE user_id = ? AND device_id = ?",
     )
     .bind(user_id)
     .bind(device_id)
-    .fetch_one(db)
+    .fetch_optional(db)
     .await?;
+
+    let has_synced_before = cursor.is_some();
+    let last_known_version = cursor.unwrap_or(0);
 
     // Compare each client file against server state
     for client_file in client_files {
@@ -102,14 +108,15 @@ pub async fn compute_delta(
     }
 
     // Files on server but not on client
+    let client_is_empty = client_files.is_empty();
     for (path, (file_id, hash, _size, is_deleted, updated_at)) in &server_map {
         if client_paths.contains(path.as_str()) || *is_deleted {
             continue;
         }
 
-        if has_synced_before {
-            // Device has synced before but doesn't have this file →
-            // it was deleted locally. Mark as deleted on server.
+        if has_synced_before && !client_is_empty && *updated_at <= last_known_version {
+            // File existed on the server when this device last synced and the device
+            // no longer reports it → deleted locally. Mark as deleted on server.
             instructions.push(SyncInstruction {
                 path: path.clone(),
                 action: SyncAction::Delete,
@@ -118,7 +125,8 @@ pub async fn compute_delta(
                 server_modified_at: Some(*updated_at),
             });
         } else {
-            // First sync for this device → download everything from server
+            // File is new to this device (first sync, empty vault, or added after
+            // the device last synced) → download from server.
             instructions.push(SyncInstruction {
                 path: path.clone(),
                 action: SyncAction::Download,
