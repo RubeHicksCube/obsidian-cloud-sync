@@ -295,6 +295,73 @@ tr:hover td { background: var(--bg-hover); }
   font-size: 16px;
 }
 
+/* Settings page rows */
+.settings-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 20px;
+  margin-bottom: 20px;
+}
+.settings-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  padding: 14px 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+.setting-row:last-child { border-bottom: none; }
+.setting-info { flex: 1; min-width: 0; }
+.setting-name { font-size: 14px; font-weight: 500; margin-bottom: 3px; }
+.setting-desc { font-size: 13px; color: var(--text-muted); line-height: 1.4; }
+.setting-control { flex-shrink: 0; }
+.setting-control input[type="number"],
+.setting-control select {
+  width: 150px;
+  padding: 8px 10px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.setting-control input[type="number"]:focus,
+.setting-control select:focus { border-color: var(--primary); }
+.settings-save-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+.settings-msg { font-size: 13px; }
+.settings-msg.ok { color: var(--success); }
+.settings-msg.err { color: var(--danger); }
+
+/* Modal checkbox row */
+.form-group.checkbox-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+.form-group.checkbox-row label {
+  margin-bottom: 0;
+  font-size: 14px;
+  color: var(--text);
+}
+
 /* Empty state */
 .empty-state {
   text-align: center;

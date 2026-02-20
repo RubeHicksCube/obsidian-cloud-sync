@@ -647,7 +647,10 @@ async function renderUsers(el) {
             <div class="form-group"><label>Username</label><input name="username" required></div>
             <div class="form-group"><label>Password</label><input name="password" type="password" required></div>
             <div class="form-group"><label>Email</label><input name="email" type="email"></div>
-            <div class="form-group"><label><input name="is_admin" type="checkbox"> Admin</label></div>
+            <div class="form-group checkbox-row">
+              <label>Admin</label>
+              <input name="is_admin" type="checkbox">
+            </div>
             <div class="modal-actions">
               <button type="button" class="btn btn-outline" onclick="closeModal()">Cancel</button>
               <button type="submit" class="btn btn-primary">Create</button>
@@ -690,31 +693,56 @@ async function renderSettings(el) {
   try {
     const data = await api('/admin/settings');
     const s = data.settings;
+    const regOpen = s.registration_open !== 'false';
     $('#settings-content').innerHTML = html`
-      <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius);padding:24px;">
-        <form id="settings-form">
-          <div class="form-group">
-            <label>Max Versions Per File</label>
-            <input name="max_versions_per_file" type="number" min="1" max="1000" value="${s.max_versions_per_file || 50}">
+      <form id="settings-form">
+        <div class="settings-section">
+          <div class="settings-section-title">Version History</div>
+          <div class="setting-row">
+            <div class="setting-info">
+              <div class="setting-name">Max versions per file</div>
+              <div class="setting-desc">How many saved versions to keep per file. Older versions beyond this limit are pruned automatically during cleanup.</div>
+            </div>
+            <div class="setting-control">
+              <input name="max_versions_per_file" type="number" min="1" max="1000" value="${s.max_versions_per_file || 50}">
+            </div>
           </div>
-          <div class="form-group">
-            <label>Max Version Age (days) — 0 = never expire</label>
-            <input name="max_version_age_days" type="number" min="0" max="3650" value="${s.max_version_age_days !== undefined ? s.max_version_age_days : 90}">
+          <div class="setting-row">
+            <div class="setting-info">
+              <div class="setting-name">Max version age (days)</div>
+              <div class="setting-desc">Versions older than this many days are deleted automatically. Set to 0 to keep all versions indefinitely.</div>
+            </div>
+            <div class="setting-control">
+              <input name="max_version_age_days" type="number" min="0" max="3650" value="${s.max_version_age_days !== undefined ? s.max_version_age_days : 90}">
+            </div>
           </div>
-          <div class="form-group">
-            <label>Registration Open</label>
-            <select name="registration_open">
-              <option value="true" ${s.registration_open === 'true' ? 'selected' : ''}>Open</option>
-              <option value="false" ${s.registration_open === 'false' ? 'selected' : ''}>Closed</option>
-            </select>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Access</div>
+          <div class="setting-row">
+            <div class="setting-info">
+              <div class="setting-name">Open registration</div>
+              <div class="setting-desc">When closed, only admins can create new accounts. Disable this after initial setup to lock down your server.</div>
+            </div>
+            <div class="setting-control">
+              <select name="registration_open">
+                <option value="true" ${regOpen ? 'selected' : ''}>Open</option>
+                <option value="false" ${!regOpen ? 'selected' : ''}>Closed</option>
+              </select>
+            </div>
           </div>
-          <div id="settings-msg"></div>
+        </div>
+
+        <div class="settings-save-row">
           <button type="submit" class="btn btn-primary">Save Settings</button>
-        </form>
-      </div>`;
+          <span id="settings-msg" class="settings-msg"></span>
+        </div>
+      </form>`;
     $('#settings-form').onsubmit = async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
+      const msg = $('#settings-msg');
       try {
         await api('/admin/settings', { method: 'PUT', json: {
           settings: {
@@ -723,9 +751,12 @@ async function renderSettings(el) {
             registration_open: fd.get('registration_open'),
           }
         }});
-        $('#settings-msg').innerHTML = '<div style="color:var(--success);margin:8px 0">Settings saved.</div>';
+        msg.textContent = 'Settings saved.';
+        msg.className = 'settings-msg ok';
+        setTimeout(() => { msg.textContent = ''; }, 3000);
       } catch (err) {
-        $('#settings-msg').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
+        msg.textContent = err.message;
+        msg.className = 'settings-msg err';
       }
     };
   } catch (err) {
