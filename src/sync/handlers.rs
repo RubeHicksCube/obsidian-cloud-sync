@@ -472,35 +472,51 @@ pub async fn download(
     Path(file_id): Path<String>,
     Query(query): Query<DownloadQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Verify file belongs to user and get path
-    let row: Option<(String, String)> =
-        sqlx::query_as("SELECT hash, path FROM files WHERE id = ? AND user_id = ?")
+    // Verify file belongs to user
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT path FROM files WHERE id = ? AND user_id = ?")
             .bind(&file_id)
             .bind(&claims.sub)
             .fetch_optional(&state.db)
             .await?;
 
-    let (current_hash, file_path) =
+    let (file_path,) =
         row.ok_or_else(|| AppError::NotFound("File not found".into()))?;
 
-    let storage = BlobStorage::new(&state.config.data_dir);
-
-    // If a specific version is requested, look up its hash
-    let hash = if let Some(ver) = query.version {
-        let ver_hash: Option<(String,)> = sqlx::query_as(
-            "SELECT hash FROM file_versions WHERE file_id = ? AND version = ?",
+    // Fetch the blob_path for the requested version.
+    // We use blob_path (the actual on-disk location set at upload time) rather
+    // than reconstructing from files.hash, because files.hash stores the
+    // plaintext hash for delta comparison while the blob on disk is stored
+    // under the encrypted content's hash — different paths for encrypted vaults.
+    let blob_path: String = if let Some(ver) = query.version {
+        let ver_row: Option<(String,)> = sqlx::query_as(
+            "SELECT blob_path FROM file_versions WHERE file_id = ? AND version = ?",
         )
         .bind(&file_id)
         .bind(ver)
         .fetch_optional(&state.db)
         .await?;
-        let (h,) = ver_hash.ok_or_else(|| AppError::NotFound("Version not found".into()))?;
-        h
+        let (bp,) = ver_row.ok_or_else(|| AppError::NotFound("Version not found".into()))?;
+        bp
     } else {
-        current_hash
+        // Join on current_version to get the blob for the live file state.
+        let cur_row: Option<(String,)> = sqlx::query_as(
+            "SELECT fv.blob_path \
+             FROM file_versions fv \
+             JOIN files f ON f.id = fv.file_id AND f.current_version = fv.version \
+             WHERE fv.file_id = ?",
+        )
+        .bind(&file_id)
+        .fetch_optional(&state.db)
+        .await?;
+        let (bp,) = cur_row.ok_or_else(|| AppError::NotFound("Blob not found".into()))?;
+        bp
     };
 
-    let data = storage.read(&claims.sub, &hash).await?;
+    let data = tokio::fs::read(&blob_path).await.map_err(|_| {
+        tracing::warn!("Blob file missing at {}", blob_path);
+        AppError::NotFound("Blob not found".into())
+    })?;
 
     let raw_filename = file_path.rsplit('/').next().unwrap_or("file");
     let filename = sanitize_filename(raw_filename);
