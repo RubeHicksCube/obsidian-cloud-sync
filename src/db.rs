@@ -80,6 +80,8 @@ async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     // Safe column additions (idempotent — silently ignores if column already exists)
     add_column_if_missing(pool, "users", "failed_attempts", "INTEGER NOT NULL DEFAULT 0").await;
     add_column_if_missing(pool, "users", "locked_until", "INTEGER").await;
+    // Encryption salt shared across all devices for the same account
+    add_column_if_missing(pool, "users", "encryption_salt", "TEXT NOT NULL DEFAULT ''").await;
 
     Ok(())
 }

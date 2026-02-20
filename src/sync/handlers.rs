@@ -108,9 +108,19 @@ pub async fn delta(
         compute_delta(&state.db, &claims.sub, &req.files, &req.deleted_paths).await?;
     let server_time = Utc::now().timestamp();
 
+    // Return the account-wide encryption salt so all devices can share the same key.
+    let encryption_salt: String = sqlx::query_scalar(
+        "SELECT COALESCE(encryption_salt, '') FROM users WHERE id = ?",
+    )
+    .bind(&claims.sub)
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or_default();
+
     Ok(Json(DeltaResponse {
         instructions,
         server_time,
+        encryption_salt,
     }))
 }
 

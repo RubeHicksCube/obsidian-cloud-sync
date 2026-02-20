@@ -423,6 +423,45 @@ pub async fn logout(
     }))
 }
 
+// --- Encryption Salt ---
+
+#[derive(Deserialize)]
+pub struct SetEncryptionSaltRequest {
+    pub salt: String,
+}
+
+/// Store the account-wide encryption salt.
+/// Only accepted when the account has no salt yet (first device wins).
+/// All subsequent devices receive the salt via the delta response.
+pub async fn set_encryption_salt(
+    State(state): State<AppState>,
+    claims: axum::Extension<crate::auth::tokens::Claims>,
+    Json(req): Json<SetEncryptionSaltRequest>,
+) -> Result<Json<MessageResponse>, AppError> {
+    // Validate: must be 32 lowercase hex chars (16-byte salt)
+    if req.salt.len() != 32
+        || !req.salt.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+    {
+        return Err(AppError::BadRequest(
+            "Invalid salt: must be 32 lowercase hex characters".into(),
+        ));
+    }
+
+    // Only set if the account has no salt yet — first device wins.
+    sqlx::query(
+        "UPDATE users SET encryption_salt = ? \
+         WHERE id = ? AND (encryption_salt = '' OR encryption_salt IS NULL)",
+    )
+    .bind(&req.salt)
+    .bind(&claims.sub)
+    .execute(&state.db)
+    .await?;
+
+    Ok(Json(MessageResponse {
+        message: "Encryption salt stored".into(),
+    }))
+}
+
 // --- Password Change ---
 
 #[derive(Deserialize)]

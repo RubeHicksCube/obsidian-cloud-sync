@@ -78,6 +78,7 @@ async fn main() {
     // Authenticated routes
     let auth_routes = Router::new()
         .route("/api/auth/change-password", post(auth::handlers::change_password))
+        .route("/api/auth/encryption-salt", put(auth::handlers::set_encryption_salt))
         .route("/api/sync/delta", post(sync::handlers::delta))
         .route("/api/sync/upload", post(sync::handlers::upload))
         .route("/api/sync/upload/multipart", post(sync::handlers::upload_multipart))

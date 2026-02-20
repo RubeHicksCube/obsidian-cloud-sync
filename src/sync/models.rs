@@ -44,6 +44,9 @@ pub struct SyncInstruction {
 pub struct DeltaResponse {
     pub instructions: Vec<SyncInstruction>,
     pub server_time: i64,
+    /// The account-wide encryption salt, shared across all devices.
+    /// Empty string means encryption has not been configured yet.
+    pub encryption_salt: String,
 }
 
 #[derive(Debug, Serialize)]
