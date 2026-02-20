@@ -12,6 +12,7 @@ mod web;
 mod ws;
 
 use axum::{
+    extract::DefaultBodyLimit,
     http::HeaderValue,
     middleware,
     routing::{delete, get, post, put},
@@ -60,7 +61,11 @@ async fn main() {
         ws_clients: Arc::new(DashMap::new()),
     };
 
-    let max_body = (config.max_upload_size_mb * 1024 * 1024) as usize;
+    // Base64 JSON encoding adds ~33% overhead vs raw file bytes.
+    // Apply 2× multiplier so the body limit matches the configured file-size
+    // limit even after encoding. axum's Json extractor also has its own
+    // DefaultBodyLimit (default 2 MB) which we must override here.
+    let max_body = (config.max_upload_size_mb * 1024 * 1024 * 2) as usize;
 
     // Public routes (no auth)
     let public_routes = Router::new()
@@ -144,6 +149,9 @@ async fn main() {
         .merge(ws_routes)
         .merge(web_routes)
         .layer(CompressionLayer::new())
+        // Override axum's default 2 MB per-extractor limit (DefaultBodyLimit)
+        // and tower-http's request body cap to match MAX_UPLOAD_SIZE_MB.
+        .layer(DefaultBodyLimit::max(max_body))
         .layer(RequestBodyLimitLayer::new(max_body))
         // CSP headers
         .layer(SetResponseHeaderLayer::overriding(
