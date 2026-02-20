@@ -692,7 +692,6 @@ async function renderSettings(el) {
     const s = data.settings;
     $('#settings-content').innerHTML = html`
       <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius);padding:24px;">
-        <p style="font-size:13px;color:var(--text-muted);margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border)">Current versions of all files are never automatically deleted — the pruner only removes older versions based on the limits below.</p>
         <form id="settings-form">
           <div class="form-group">
             <label>Max Versions Per File</label>
@@ -709,13 +708,6 @@ async function renderSettings(el) {
               <option value="false" ${s.registration_open === 'false' ? 'selected' : ''}>Closed</option>
             </select>
           </div>
-          <div style="margin-bottom:20px;border-top:1px solid var(--border);padding-top:16px">
-            <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:12px">Archive Protection</div>
-            <label style="display:flex;align-items:center;justify-content:space-between;gap:16px;cursor:pointer;font-size:14px;line-height:1.5;color:var(--text)">
-              <span>Preserve all versions of archived (deleted) files — disables automatic version pruning for files in the Archive</span>
-              <input type="checkbox" name="keep_archive_versions" ${s.keep_archive_versions === 'true' ? 'checked' : ''} style="width:18px;height:18px;min-width:18px;flex-shrink:0;cursor:pointer;accent-color:var(--primary)">
-            </label>
-          </div>
           <div id="settings-msg"></div>
           <button type="submit" class="btn btn-primary">Save Settings</button>
         </form>
@@ -729,7 +721,6 @@ async function renderSettings(el) {
             max_versions_per_file: fd.get('max_versions_per_file'),
             max_version_age_days: fd.get('max_version_age_days'),
             registration_open: fd.get('registration_open'),
-            keep_archive_versions: fd.has('keep_archive_versions') ? 'true' : 'false',
           }
         }});
         $('#settings-msg').innerHTML = '<div style="color:var(--success);margin:8px 0">Settings saved.</div>';
