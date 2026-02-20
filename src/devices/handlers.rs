@@ -116,3 +116,60 @@ pub async fn revoke_device(
         serde_json::json!({"message": "Device revoked successfully"}),
     ))
 }
+
+pub async fn revoke_all_devices(
+    State(state): State<AppState>,
+    claims: axum::Extension<Claims>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    // Fetch all devices for this user except the current one
+    let device_ids: Vec<(String,)> = sqlx::query_as(
+        "SELECT id FROM devices WHERE user_id = ? AND id != ?",
+    )
+    .bind(&claims.sub)
+    .bind(&claims.device_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    let count = device_ids.len();
+    let mut tx = state.db.begin().await?;
+
+    for (device_id,) in &device_ids {
+        sqlx::query("DELETE FROM refresh_tokens WHERE device_id = ?")
+            .bind(device_id)
+            .execute(&mut *tx)
+            .await?;
+
+        sqlx::query("DELETE FROM sync_cursors WHERE device_id = ?")
+            .bind(device_id)
+            .execute(&mut *tx)
+            .await?;
+
+        sqlx::query("UPDATE file_versions SET device_id = NULL WHERE device_id = ?")
+            .bind(device_id)
+            .execute(&mut *tx)
+            .await?;
+
+        sqlx::query("DELETE FROM devices WHERE id = ?")
+            .bind(device_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    tx.commit().await?;
+
+    crate::audit::log_event(
+        &state.db,
+        Some(&claims.sub),
+        "device_revoke_all",
+        None,
+        None,
+        Some(&format!("count={}", count)),
+        None,
+    )
+    .await;
+
+    Ok(Json(serde_json::json!({
+        "message": format!("{} devices removed", count),
+        "count": count,
+    })))
+}

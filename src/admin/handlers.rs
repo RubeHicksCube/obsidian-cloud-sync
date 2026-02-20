@@ -257,9 +257,16 @@ fn validate_setting(key: &str, value: &str) -> Result<(), AppError> {
             let v: u32 = value.parse().map_err(|_| {
                 AppError::BadRequest("max_version_age_days must be a number".into())
             })?;
-            if !(1..=3650).contains(&v) {
+            if v > 3650 {
                 return Err(AppError::BadRequest(
-                    "max_version_age_days must be between 1 and 3650".into(),
+                    "max_version_age_days must be between 0 and 3650 (0 = never expire)".into(),
+                ));
+            }
+        }
+        "keep_archive_versions" => {
+            if value != "true" && value != "false" {
+                return Err(AppError::BadRequest(
+                    "keep_archive_versions must be 'true' or 'false'".into(),
                 ));
             }
         }

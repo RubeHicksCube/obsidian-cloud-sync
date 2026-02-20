@@ -328,3 +328,82 @@ pub async fn wipe_archive(
         message: format!("{} files permanently deleted", count),
     }))
 }
+
+pub async fn restore_all(
+    State(state): State<AppState>,
+    claims: axum::Extension<Claims>,
+) -> Result<Json<WipeResponse>, AppError> {
+    let now = Utc::now().timestamp();
+    let result = sqlx::query(
+        "UPDATE files SET is_deleted = FALSE, updated_at = ? WHERE user_id = ? AND is_deleted = TRUE",
+    )
+    .bind(now)
+    .bind(&claims.sub)
+    .execute(&state.db)
+    .await?;
+
+    let count = result.rows_affected();
+
+    crate::audit::log_event(
+        &state.db,
+        Some(&claims.sub),
+        "archive_restore_all",
+        None,
+        None,
+        Some(&format!("count={}", count)),
+        None,
+    )
+    .await;
+
+    Ok(Json(WipeResponse {
+        message: format!("{} files restored", count),
+    }))
+}
+
+pub async fn delete_permanent(
+    State(state): State<AppState>,
+    claims: axum::Extension<Claims>,
+    Path(file_id): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let file: Option<(String, bool)> = sqlx::query_as(
+        "SELECT id, is_deleted FROM files WHERE id = ? AND user_id = ?",
+    )
+    .bind(&file_id)
+    .bind(&claims.sub)
+    .fetch_optional(&state.db)
+    .await?;
+
+    let (_id, is_deleted) =
+        file.ok_or_else(|| AppError::NotFound("File not found".into()))?;
+
+    if !is_deleted {
+        return Err(AppError::BadRequest(
+            "File must be archived before permanent deletion".into(),
+        ));
+    }
+
+    sqlx::query("DELETE FROM file_versions WHERE file_id = ?")
+        .bind(&file_id)
+        .execute(&state.db)
+        .await?;
+
+    sqlx::query("DELETE FROM files WHERE id = ?")
+        .bind(&file_id)
+        .execute(&state.db)
+        .await?;
+
+    crate::audit::log_event(
+        &state.db,
+        Some(&claims.sub),
+        "file_delete_permanent",
+        Some("file"),
+        Some(&file_id),
+        None,
+        None,
+    )
+    .await;
+
+    Ok(Json(
+        serde_json::json!({"message": "File permanently deleted"}),
+    ))
+}

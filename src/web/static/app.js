@@ -360,84 +360,250 @@ async function renderFileVersions(el, fileId) {
 
 // --- Archive ---
 async function renderArchive(el) {
-  el.innerHTML = html`
-    <div class="page-header">
-      <h2>Archive</h2>
-      <button class="btn btn-danger btn-sm" id="wipe-archive-btn">Wipe Archive</button>
-    </div>
-    <div id="archive-content"><div class="spinner"></div></div>`;
-  try {
-    const allFiles = await api('/files?include_deleted=true');
-    const archived = allFiles.filter(f => f.is_deleted);
+  let archived = [];
+  let selected = new Set();
+
+  function syncButtons() {
+    const hasSel = selected.size > 0;
+    const hasAny = archived.length > 0;
+    const rSel = $('#restore-sel-btn');
+    const dSel = $('#delete-sel-btn');
+    const rAll = $('#restore-all-btn');
+    const wipe = $('#wipe-archive-btn');
+    if (rSel) rSel.disabled = !hasSel;
+    if (dSel) dSel.disabled = !hasSel;
+    if (rAll) rAll.style.display = hasAny ? '' : 'none';
+    if (wipe) wipe.style.display = hasAny ? '' : 'none';
+  }
+
+  function renderTable() {
+    const wrap = $('#archive-table-wrap');
+    if (!wrap) return;
     if (archived.length === 0) {
-      $('#archive-content').innerHTML = html`<div class="empty-state"><p>Archive is empty.</p></div>`;
-      $('#wipe-archive-btn').style.display = 'none';
+      wrap.innerHTML = html`<div class="empty-state"><p>Archive is empty.</p></div>`;
+      syncButtons();
       return;
     }
-    $('#archive-content').innerHTML = html`
+    const allChecked = archived.every(f => selected.has(f.id));
+    wrap.innerHTML = html`
       <div class="table-wrap"><table>
-        <thead><tr><th>Path</th><th>Size</th><th>Deleted At</th><th></th></tr></thead>
+        <thead><tr>
+          <th><input type="checkbox" id="sel-all-archive" ${allChecked ? 'checked' : ''}></th>
+          <th>Path</th><th>Size</th><th>Deleted At</th><th></th>
+        </tr></thead>
         <tbody>${raw(archived.map(f => html`
           <tr>
+            <td><input type="checkbox" class="archive-cb" data-id="${f.id}" ${selected.has(f.id) ? 'checked' : ''}></td>
             <td>${f.path}</td>
             <td>${formatBytes(f.size)}</td>
             <td>${formatTime(f.updated_at)}</td>
-            <td><button class="btn btn-outline btn-sm" onclick="restoreFile('${esc(f.id)}')">Restore</button></td>
+            <td><button class="btn btn-outline btn-sm" onclick="restoreOne('${f.id}')">Restore</button></td>
           </tr>`).join(''))}
         </tbody>
       </table></div>`;
-    window.restoreFile = async (id) => {
-      if (!confirm('Restore this file?')) return;
+    const selAllEl = $('#sel-all-archive');
+    if (selAllEl) {
+      selAllEl.onchange = () => {
+        if (selAllEl.checked) archived.forEach(f => selected.add(f.id));
+        else selected.clear();
+        renderTable();
+      };
+    }
+    $$('.archive-cb').forEach(cb => {
+      cb.onchange = () => {
+        if (cb.checked) selected.add(cb.dataset.id);
+        else selected.delete(cb.dataset.id);
+        const selAll = $('#sel-all-archive');
+        if (selAll) selAll.checked = archived.every(f => selected.has(f.id));
+        syncButtons();
+      };
+    });
+    syncButtons();
+  }
+
+  el.innerHTML = html`
+    <div class="page-header">
+      <h2>Archive</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-outline btn-sm" id="restore-sel-btn" disabled>Restore Selected</button>
+        <button class="btn btn-danger btn-sm" id="delete-sel-btn" disabled>Delete Selected</button>
+        <button class="btn btn-outline btn-sm" id="restore-all-btn" style="display:none">Restore All</button>
+        <button class="btn btn-danger btn-sm" id="wipe-archive-btn" style="display:none">Wipe Archive</button>
+      </div>
+    </div>
+    <div id="archive-table-wrap"><div class="spinner"></div></div>`;
+
+  window.restoreOne = async (id) => {
+    if (!confirm('Restore this file?')) return;
+    try {
+      await api(`/files/${id}/restore`, { method: 'POST' });
+      archived = archived.filter(f => f.id !== id);
+      selected.delete(id);
+      renderTable();
+    } catch (err) { alert(err.message); }
+  };
+
+  $('#restore-sel-btn').onclick = async () => {
+    const ids = [...selected];
+    if (!confirm(`Restore ${ids.length} file(s)?`)) return;
+    for (const id of ids) {
       try {
         await api(`/files/${id}/restore`, { method: 'POST' });
-        renderArchive(el);
-      } catch (err) { alert(err.message); }
-    };
-    $('#wipe-archive-btn').onclick = async () => {
-      if (!confirm('Permanently delete all archived files? This cannot be undone.')) return;
+        archived = archived.filter(f => f.id !== id);
+        selected.delete(id);
+      } catch (err) { alert(`Failed to restore: ${err.message}`); break; }
+    }
+    renderTable();
+  };
+
+  $('#delete-sel-btn').onclick = async () => {
+    const ids = [...selected];
+    if (!confirm(`Permanently delete ${ids.length} file(s)? This cannot be undone.`)) return;
+    for (const id of ids) {
       try {
-        await api('/files/archive', { method: 'DELETE' });
-        renderArchive(el);
-      } catch (err) { alert(err.message); }
-    };
+        await api(`/files/${id}`, { method: 'DELETE' });
+        archived = archived.filter(f => f.id !== id);
+        selected.delete(id);
+      } catch (err) { alert(`Failed to delete: ${err.message}`); break; }
+    }
+    renderTable();
+  };
+
+  $('#restore-all-btn').onclick = async () => {
+    if (!confirm(`Restore all ${archived.length} archived file(s)?`)) return;
+    try {
+      await api('/files/archive/restore', { method: 'POST' });
+      archived = [];
+      selected.clear();
+      renderTable();
+    } catch (err) { alert(err.message); }
+  };
+
+  $('#wipe-archive-btn').onclick = async () => {
+    if (!confirm('Permanently delete all archived files? This cannot be undone.')) return;
+    try {
+      await api('/files/archive', { method: 'DELETE' });
+      archived = [];
+      selected.clear();
+      renderTable();
+    } catch (err) { alert(err.message); }
+  };
+
+  try {
+    const allFiles = await api('/files?include_deleted=true');
+    archived = allFiles.filter(f => f.is_deleted);
+    renderTable();
   } catch (err) {
-    $('#archive-content').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
+    $('#archive-table-wrap').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
   }
 }
 
 // --- Devices ---
 async function renderDevices(el) {
-  el.innerHTML = html`
-    <div class="page-header"><h2>Devices</h2></div>
-    <div id="devices-content"><div class="spinner"></div></div>`;
-  try {
-    const devices = await api('/devices');
+  let devices = [];
+  let selected = new Set();
+
+  function syncButtons() {
+    const rSel = $('#remove-sel-btn');
+    const rAll = $('#remove-all-btn');
+    if (rSel) rSel.disabled = selected.size === 0;
+    if (rAll) rAll.style.display = devices.length > 0 ? '' : 'none';
+  }
+
+  function renderTable() {
+    const wrap = $('#devices-table-wrap');
+    if (!wrap) return;
     if (devices.length === 0) {
-      $('#devices-content').innerHTML = html`<div class="empty-state"><p>No devices linked.</p></div>`;
+      wrap.innerHTML = html`<div class="empty-state"><p>No devices linked.</p></div>`;
+      syncButtons();
       return;
     }
-    $('#devices-content').innerHTML = html`
+    const allChecked = devices.length > 0 && devices.every(d => selected.has(d.id));
+    wrap.innerHTML = html`
       <div class="table-wrap"><table>
-        <thead><tr><th>Name</th><th>Type</th><th>Last Seen</th><th>Created</th><th></th></tr></thead>
+        <thead><tr>
+          <th><input type="checkbox" id="sel-all-devices" ${allChecked ? 'checked' : ''}></th>
+          <th>Name</th><th>Type</th><th>Last Seen</th><th>Created</th><th></th>
+        </tr></thead>
         <tbody>${raw(devices.map(d => html`
           <tr>
+            <td><input type="checkbox" class="device-cb" data-id="${d.id}" ${selected.has(d.id) ? 'checked' : ''}></td>
             <td>${d.name}</td>
             <td>${d.device_type || '—'}</td>
             <td>${formatTime(d.last_seen_at)}</td>
             <td>${formatTime(d.created_at)}</td>
-            <td><button class="btn btn-danger btn-sm" onclick="revokeDevice('${esc(d.id)}')">Remove</button></td>
+            <td><button class="btn btn-danger btn-sm" onclick="revokeOne('${d.id}')">Remove</button></td>
           </tr>`).join(''))}
         </tbody>
       </table></div>`;
-    window.revokeDevice = async (id) => {
-      if (!confirm('Remove this device? It will be signed out and forgotten.')) return;
+    const selAllEl = $('#sel-all-devices');
+    if (selAllEl) {
+      selAllEl.onchange = () => {
+        if (selAllEl.checked) devices.forEach(d => selected.add(d.id));
+        else selected.clear();
+        renderTable();
+      };
+    }
+    $$('.device-cb').forEach(cb => {
+      cb.onchange = () => {
+        if (cb.checked) selected.add(cb.dataset.id);
+        else selected.delete(cb.dataset.id);
+        const selAll = $('#sel-all-devices');
+        if (selAll) selAll.checked = devices.every(d => selected.has(d.id));
+        syncButtons();
+      };
+    });
+    syncButtons();
+  }
+
+  el.innerHTML = html`
+    <div class="page-header">
+      <h2>Devices</h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-danger btn-sm" id="remove-sel-btn" disabled>Remove Selected</button>
+        <button class="btn btn-danger btn-sm" id="remove-all-btn" style="display:none">Remove All Others</button>
+      </div>
+    </div>
+    <div id="devices-table-wrap"><div class="spinner"></div></div>`;
+
+  window.revokeOne = async (id) => {
+    if (!confirm('Remove this device? It will be signed out and forgotten.')) return;
+    try {
+      await api(`/devices/${id}`, { method: 'DELETE' });
+      devices = devices.filter(d => d.id !== id);
+      selected.delete(id);
+      renderTable();
+    } catch (err) { alert(err.message); }
+  };
+
+  $('#remove-sel-btn').onclick = async () => {
+    const ids = [...selected];
+    if (!confirm(`Remove ${ids.length} device(s)?`)) return;
+    for (const id of ids) {
       try {
         await api(`/devices/${id}`, { method: 'DELETE' });
-        renderDevices(el);
-      } catch (err) { alert(err.message); }
-    };
+        devices = devices.filter(d => d.id !== id);
+        selected.delete(id);
+      } catch (err) { alert(`Failed to remove device: ${err.message}`); break; }
+    }
+    renderTable();
+  };
+
+  $('#remove-all-btn').onclick = async () => {
+    if (!confirm('Remove all other devices? They will be signed out and forgotten.')) return;
+    try {
+      await api('/devices', { method: 'DELETE' });
+      devices = await api('/devices');
+      selected.clear();
+      renderTable();
+    } catch (err) { alert(err.message); }
+  };
+
+  try {
+    devices = await api('/devices');
+    renderTable();
   } catch (err) {
-    $('#devices-content').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
+    $('#devices-table-wrap').innerHTML = `<div class="error-msg">${esc(err.message)}</div>`;
   }
 }
 
@@ -529,11 +695,11 @@ async function renderSettings(el) {
         <form id="settings-form">
           <div class="form-group">
             <label>Max Versions Per File</label>
-            <input name="max_versions_per_file" type="number" value="${s.max_versions_per_file || 50}">
+            <input name="max_versions_per_file" type="number" min="1" max="1000" value="${s.max_versions_per_file || 50}">
           </div>
           <div class="form-group">
-            <label>Max Version Age (days)</label>
-            <input name="max_version_age_days" type="number" value="${s.max_version_age_days || 90}">
+            <label>Max Version Age (days) — set to 0 to never expire</label>
+            <input name="max_version_age_days" type="number" min="0" max="3650" value="${s.max_version_age_days !== undefined ? s.max_version_age_days : 90}">
           </div>
           <div class="form-group">
             <label>Registration Open</label>
@@ -541,6 +707,19 @@ async function renderSettings(el) {
               <option value="true" ${s.registration_open === 'true' ? 'selected' : ''}>Open</option>
               <option value="false" ${s.registration_open === 'false' ? 'selected' : ''}>Closed</option>
             </select>
+          </div>
+          <div class="form-group">
+            <label>Data Preservation</label>
+            <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+              <label style="display:flex;align-items:flex-start;gap:10px;cursor:default;opacity:0.6">
+                <input type="checkbox" checked disabled style="margin-top:3px;flex-shrink:0">
+                <span>Current version of every file is always preserved — the pruner never deletes the active version (enforced in server code, cannot be disabled)</span>
+              </label>
+              <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+                <input type="checkbox" name="keep_archive_versions" ${s.keep_archive_versions === 'true' ? 'checked' : ''} style="margin-top:3px;flex-shrink:0">
+                <span>Preserve all versions of archived (deleted) files — disables automatic version pruning for files in the Archive</span>
+              </label>
+            </div>
           </div>
           <div id="settings-msg"></div>
           <button type="submit" class="btn btn-primary">Save Settings</button>
@@ -555,6 +734,7 @@ async function renderSettings(el) {
             max_versions_per_file: fd.get('max_versions_per_file'),
             max_version_age_days: fd.get('max_version_age_days'),
             registration_open: fd.get('registration_open'),
+            keep_archive_versions: fd.has('keep_archive_versions') ? 'true' : 'false',
           }
         }});
         $('#settings-msg').innerHTML = '<div style="color:var(--success);margin:8px 0">Settings saved.</div>';

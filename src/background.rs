@@ -113,20 +113,55 @@ async fn cleanup_expired_tokens(pool: &SqlitePool) -> Result<(), sqlx::Error> {
 }
 
 /// Prune old file versions based on max count and retention days.
+///
+/// All three limits are read from the `server_settings` DB table at runtime so
+/// changes made in the admin panel take effect on the next pruning cycle without
+/// a server restart. Falls back to the startup config values if a setting has
+/// not been stored in the DB yet.
 async fn prune_versions(pool: &SqlitePool, config: &Config) -> Result<(), sqlx::Error> {
-    let max_versions = config.max_versions_per_file as i64;
-    let retention_seconds = config.version_retention_days as i64 * 86400;
-    let cutoff = chrono::Utc::now().timestamp() - retention_seconds;
+    // Read per-user-configurable limits from DB, fall back to startup env config.
+    let max_versions: i64 = sqlx::query_scalar(
+        "SELECT CAST(value AS INTEGER) FROM server_settings WHERE key = 'max_versions_per_file'",
+    )
+    .fetch_optional(pool)
+    .await?
+    .unwrap_or(config.max_versions_per_file as i64);
+
+    let retention_days: i64 = sqlx::query_scalar(
+        "SELECT CAST(value AS INTEGER) FROM server_settings WHERE key = 'max_version_age_days'",
+    )
+    .fetch_optional(pool)
+    .await?
+    .unwrap_or(config.version_retention_days as i64);
+
+    // 0 = never expire by age — skip age-based pruning entirely.
+    let age_cutoff: Option<i64> = if retention_days > 0 {
+        Some(chrono::Utc::now().timestamp() - retention_days * 86400)
+    } else {
+        None
+    };
+
+    // When keep_archive_versions is enabled, skip pruning for archived (soft-deleted) files.
+    let keep_archive: bool = sqlx::query_scalar(
+        "SELECT value = 'true' FROM server_settings WHERE key = 'keep_archive_versions'",
+    )
+    .fetch_optional(pool)
+    .await?
+    .unwrap_or(false);
+
     let mut total_pruned: u64 = 0;
 
-    // Get all files
-    let files: Vec<(String, i64)> =
+    let files: Vec<(String, i64)> = if keep_archive {
+        sqlx::query_as("SELECT id, current_version FROM files WHERE is_deleted = FALSE")
+            .fetch_all(pool)
+            .await?
+    } else {
         sqlx::query_as("SELECT id, current_version FROM files")
             .fetch_all(pool)
-            .await?;
+            .await?
+    };
 
     for (file_id, current_version) in &files {
-        // Delete versions exceeding max count (keep newest, never delete current)
         let versions: Vec<(String, i64, i64)> = sqlx::query_as(
             "SELECT id, version, created_at FROM file_versions WHERE file_id = ? ORDER BY version DESC",
         )
@@ -135,13 +170,12 @@ async fn prune_versions(pool: &SqlitePool, config: &Config) -> Result<(), sqlx::
         .await?;
 
         for (i, (ver_id, version, created_at)) in versions.iter().enumerate() {
-            // Never delete the current version
+            // Never delete the current version — enforced unconditionally.
             if *version == *current_version {
                 continue;
             }
-            // Delete if beyond max count or older than retention
             let beyond_count = i as i64 >= max_versions;
-            let beyond_age = *created_at < cutoff;
+            let beyond_age = age_cutoff.map(|c| *created_at < c).unwrap_or(false);
             if beyond_count || beyond_age {
                 sqlx::query("DELETE FROM file_versions WHERE id = ?")
                     .bind(ver_id)

@@ -100,8 +100,17 @@ async fn main() {
             "/api/files/{id}/restore",
             post(files::handlers::restore),
         )
+        .route(
+            "/api/files/{id}",
+            delete(files::handlers::delete_permanent),
+        )
         .route("/api/files/archive", delete(files::handlers::wipe_archive))
+        .route(
+            "/api/files/archive/restore",
+            post(files::handlers::restore_all),
+        )
         .route("/api/devices", get(devices::handlers::list_devices))
+        .route("/api/devices", delete(devices::handlers::revoke_all_devices))
         .route(
             "/api/devices/{id}",
             delete(devices::handlers::revoke_device),
