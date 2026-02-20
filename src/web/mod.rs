@@ -29,7 +29,10 @@ pub async fn static_file(
                 .first_or_octet_stream()
                 .to_string();
             (
-                [(header::CONTENT_TYPE, mime)],
+                [
+                    (header::CONTENT_TYPE, mime),
+                    (header::CACHE_CONTROL, "no-cache".to_string()),
+                ],
                 content.data.to_vec(),
             )
                 .into_response()
