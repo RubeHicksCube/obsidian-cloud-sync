@@ -72,21 +72,33 @@ pub async fn revoke_device(
         ));
     }
 
-    // Delete refresh tokens, sync cursors, and the device itself
+    // Delete refresh tokens, sync cursors, and the device itself.
+    // file_versions.device_id references devices(id) without ON DELETE SET NULL,
+    // so we must null it out before deleting the device row or SQLite will reject
+    // the delete with a foreign key constraint violation.
+    let mut tx = state.db.begin().await?;
+
     sqlx::query("DELETE FROM refresh_tokens WHERE device_id = ?")
         .bind(&device_id)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await?;
 
     sqlx::query("DELETE FROM sync_cursors WHERE device_id = ?")
         .bind(&device_id)
-        .execute(&state.db)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query("UPDATE file_versions SET device_id = NULL WHERE device_id = ?")
+        .bind(&device_id)
+        .execute(&mut *tx)
         .await?;
 
     sqlx::query("DELETE FROM devices WHERE id = ?")
         .bind(&device_id)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await?;
+
+    tx.commit().await?;
 
     // Log audit event
     crate::audit::log_event(
