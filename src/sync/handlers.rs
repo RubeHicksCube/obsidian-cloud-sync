@@ -1,4 +1,5 @@
 use axum::{
+    body::Bytes,
     extract::{Multipart, Path, Query, State},
     http::header,
     response::IntoResponse,
@@ -114,12 +115,78 @@ pub async fn delta(
     }))
 }
 
+/// Query parameters for the binary upload endpoint.
+#[derive(Deserialize)]
+pub struct UploadQuery {
+    pub path: String,
+    pub hash: Option<String>,
+}
+
+/// Upload a file as a raw binary POST body.
+/// Path and optional plaintext hash are passed as query parameters.
+/// This avoids multipart parsing entirely and works reliably through
+/// any proxy or CDN tunnel.
 pub async fn upload(
+    State(state): State<AppState>,
+    claims: axum::Extension<Claims>,
+    Query(query): Query<UploadQuery>,
+    body: Bytes,
+) -> Result<Json<UploadResponse>, AppError> {
+    check_storage_quota(&state, &claims.sub).await?;
+
+    let file_path = validate_file_path(&query.path)?;
+    let file_data = body.to_vec();
+
+    if file_data.is_empty() {
+        return Err(AppError::BadRequest("Empty file body".into()));
+    }
+
+    check_encryption_enforcement(&file_data, state.config.require_encryption)?;
+
+    let storage = BlobStorage::new(&state.config.data_dir);
+    let size = file_data.len() as i64;
+    let (_blob_hash, blob_path) = storage.store(&claims.sub, &file_data).await?;
+    // Use the client-provided plaintext hash for delta comparison.
+    // Critical when encryption is enabled: the blob hash covers encrypted
+    // bytes, but the client manifest hashes plaintext content.
+    let hash = query.hash.unwrap_or(_blob_hash);
+    let blob_path_str = blob_path.to_string_lossy().to_string();
+    let now = Utc::now().timestamp();
+
+    let (file_id, version) = upsert_file_record(
+        &state.db,
+        &claims.sub,
+        &file_path,
+        &hash,
+        size,
+        &blob_path_str,
+        &claims.device_id,
+        now,
+    )
+    .await?;
+
+    state.notify_sync_update(&claims.sub, &claims.device_id, &file_path, "upload");
+
+    crate::audit::log_event(
+        &state.db,
+        Some(&claims.sub),
+        "file_upload",
+        Some("file"),
+        Some(&file_id),
+        Some(&format!("path={}", file_path)),
+        None,
+    )
+    .await;
+
+    Ok(Json(UploadResponse { file_id, version }))
+}
+
+/// Legacy multipart upload — kept for backward compatibility.
+pub async fn upload_multipart(
     State(state): State<AppState>,
     claims: axum::Extension<Claims>,
     mut multipart: Multipart,
 ) -> Result<Json<UploadResponse>, AppError> {
-    // Check storage quota
     check_storage_quota(&state, &claims.sub).await?;
 
     let storage = BlobStorage::new(&state.config.data_dir);
@@ -169,19 +236,14 @@ pub async fn upload(
     let file_data =
         file_data.ok_or_else(|| AppError::BadRequest("Missing 'file' field".into()))?;
 
-    // Check encryption enforcement
     check_encryption_enforcement(&file_data, state.config.require_encryption)?;
 
     let size = file_data.len() as i64;
     let (_blob_hash, blob_path) = storage.store(&claims.sub, &file_data).await?;
-    // Use the client-provided plaintext hash for delta comparison.
-    // This is critical when encryption is enabled: the blob hash is of
-    // encrypted data, but the client manifest hashes plaintext content.
     let hash = plaintext_hash.unwrap_or(_blob_hash);
     let blob_path_str = blob_path.to_string_lossy().to_string();
     let now = Utc::now().timestamp();
 
-    // Use BEGIN IMMEDIATE to prevent race conditions on concurrent uploads
     let (file_id, version) = upsert_file_record(
         &state.db,
         &claims.sub,
@@ -194,10 +256,8 @@ pub async fn upload(
     )
     .await?;
 
-    // Notify WebSocket clients
     state.notify_sync_update(&claims.sub, &claims.device_id, &file_path, "upload");
 
-    // Log audit event
     crate::audit::log_event(
         &state.db,
         Some(&claims.sub),

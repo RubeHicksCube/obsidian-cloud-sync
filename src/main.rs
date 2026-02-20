@@ -75,6 +75,7 @@ async fn main() {
         .route("/api/auth/change-password", post(auth::handlers::change_password))
         .route("/api/sync/delta", post(sync::handlers::delta))
         .route("/api/sync/upload", post(sync::handlers::upload))
+        .route("/api/sync/upload/multipart", post(sync::handlers::upload_multipart))
         .route("/api/sync/upload/batch", post(sync::handlers::upload_batch))
         .route("/api/sync/download/{id}", get(sync::handlers::download))
         .route("/api/sync/delete/{id}", delete(sync::handlers::delete_file))
