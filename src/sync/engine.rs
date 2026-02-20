@@ -109,12 +109,46 @@ pub async fn compute_delta(
 
     // Files on server but not on client
     let client_is_empty = client_files.is_empty();
+
+    // Guard against a fresh-install / wiped-vault scenario where the device
+    // has an existing sync cursor (e.g. settings copied from another device)
+    // but its vault is nearly empty.  If the client reports fewer than 5% of
+    // the files this device was expected to know about, treat it as a fresh
+    // install and issue Download instructions instead of Deletes.
+    let expected_count: i64 = if has_synced_before {
+        sqlx::query_scalar(
+            "SELECT COUNT(*) FROM files WHERE user_id = ? AND is_deleted = FALSE AND updated_at <= ?",
+        )
+        .bind(user_id)
+        .bind(last_known_version)
+        .fetch_one(db)
+        .await
+        .unwrap_or(0)
+    } else {
+        0
+    };
+    // Only apply the threshold when the device previously knew about a meaningful
+    // number of files (≥ 10) to avoid false positives on small vaults.
+    let client_looks_fresh = has_synced_before
+        && expected_count >= 10
+        && (client_files.len() as i64) * 20 < expected_count; // client has < 5%
+
+    if client_looks_fresh {
+        tracing::warn!(
+            user_id,
+            device_id,
+            client_files = client_files.len(),
+            expected_files = expected_count,
+            "Client manifest is suspiciously small — treating as fresh install, skipping deletes"
+        );
+    }
+
     for (path, (file_id, hash, _size, is_deleted, updated_at)) in &server_map {
         if client_paths.contains(path.as_str()) || *is_deleted {
             continue;
         }
 
-        if has_synced_before && !client_is_empty && *updated_at <= last_known_version {
+        if has_synced_before && !client_is_empty && !client_looks_fresh && *updated_at <= last_known_version {
             // File existed on the server when this device last synced and the device
             // no longer reports it → deleted locally. Mark as deleted on server.
             instructions.push(SyncInstruction {
@@ -125,8 +159,8 @@ pub async fn compute_delta(
                 server_modified_at: Some(*updated_at),
             });
         } else {
-            // File is new to this device (first sync, empty vault, or added after
-            // the device last synced) → download from server.
+            // File is new to this device (first sync, empty vault, added after the
+            // device last synced, or fresh install detected) → download from server.
             instructions.push(SyncInstruction {
                 path: path.clone(),
                 action: SyncAction::Download,
