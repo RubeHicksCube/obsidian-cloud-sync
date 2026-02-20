@@ -104,14 +104,8 @@ pub async fn delta(
     claims: axum::Extension<Claims>,
     Json(req): Json<DeltaRequest>,
 ) -> Result<Json<DeltaResponse>, AppError> {
-    // Always use the device_id embedded in the JWT — it is set by the server
-    // at login time and is authoritative. Ignoring the client-supplied
-    // req.device_id prevents stale plugin settings (e.g. copied from another
-    // device via iCloud or Obsidian Sync) from causing the wrong cursor to be
-    // looked up, which would make an empty-vault fresh install appear to the
-    // server as if the device intentionally deleted all its files.
     let instructions =
-        compute_delta(&state.db, &claims.sub, &claims.device_id, &req.files).await?;
+        compute_delta(&state.db, &claims.sub, &req.files, &req.deleted_paths).await?;
     let server_time = Utc::now().timestamp();
 
     Ok(Json(DeltaResponse {

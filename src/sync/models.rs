@@ -11,7 +11,11 @@ pub struct FileManifestEntry {
 #[derive(Debug, Deserialize)]
 pub struct DeltaRequest {
     pub files: Vec<FileManifestEntry>,
-    /// If provided, used to determine if missing files were deleted locally
+    /// Paths the device explicitly deleted locally since its last sync.
+    /// Missing from this list does NOT imply deletion — use this list only.
+    #[serde(default)]
+    pub deleted_paths: Vec<String>,
+    /// Ignored — server uses the JWT device_id. Kept for backward compatibility.
     #[serde(default)]
     pub device_id: Option<String>,
 }
