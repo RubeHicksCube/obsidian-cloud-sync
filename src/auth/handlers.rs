@@ -42,6 +42,9 @@ pub struct AuthResponse {
     pub is_admin: bool,
     /// Account-wide encryption salt. Empty string means not yet configured.
     pub encryption_salt: String,
+    /// Vault passphrase encrypted client-side with a key derived from the
+    /// account password. Null until the client uploads it after first setup.
+    pub encrypted_vault_key: Option<String>,
 }
 
 /// Maximum password length to prevent Argon2 DoS with huge passwords.
@@ -197,6 +200,7 @@ pub async fn register(
         device_id,
         is_admin,
         encryption_salt: String::new(),
+        encrypted_vault_key: None,
     }))
 }
 
@@ -204,15 +208,15 @@ pub async fn login(
     State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
-    let row: Option<(String, String, bool, i32, Option<i64>, String)> = sqlx::query_as(
+    let row: Option<(String, String, bool, i32, Option<i64>, String, Option<String>)> = sqlx::query_as(
         "SELECT id, password_hash, is_admin, failed_attempts, locked_until, \
-         COALESCE(encryption_salt, '') FROM users WHERE username = ?",
+         COALESCE(encryption_salt, ''), encrypted_vault_key FROM users WHERE username = ?",
     )
     .bind(&req.username)
     .fetch_optional(&state.db)
     .await?;
 
-    let (user_id, password_hash, is_admin, failed_attempts, locked_until, encryption_salt) =
+    let (user_id, password_hash, is_admin, failed_attempts, locked_until, encryption_salt, encrypted_vault_key) =
         row.ok_or_else(|| AppError::Unauthorized("Invalid credentials".into()))?;
 
     // Check account lockout
@@ -328,6 +332,7 @@ pub async fn login(
         device_id,
         is_admin,
         encryption_salt,
+        encrypted_vault_key,
     }))
 }
 
@@ -361,8 +366,8 @@ pub async fn refresh(
     let device_id = device_id.clone();
 
     // Get user info
-    let (is_admin, encryption_salt): (bool, String) = sqlx::query_as(
-        "SELECT is_admin, COALESCE(encryption_salt, '') FROM users WHERE id = ?",
+    let (is_admin, encryption_salt, encrypted_vault_key): (bool, String, Option<String>) = sqlx::query_as(
+        "SELECT is_admin, COALESCE(encryption_salt, ''), encrypted_vault_key FROM users WHERE id = ?",
     )
     .bind(&user_id)
     .fetch_one(&state.db)
@@ -399,6 +404,7 @@ pub async fn refresh(
         device_id,
         is_admin,
         encryption_salt,
+        encrypted_vault_key,
     }))
 }
 
@@ -544,5 +550,42 @@ pub async fn change_password(
 
     Ok(Json(MessageResponse {
         message: "Password changed successfully".into(),
+    }))
+}
+
+// --- Vault Key ---
+
+#[derive(Deserialize)]
+pub struct SetVaultKeyRequest {
+    /// Hex-encoded IV (12 bytes) + AES-256-GCM ciphertext of the vault passphrase.
+    /// Encrypted client-side with a key derived from the user's login password.
+    pub encrypted_vault_key: String,
+}
+
+/// Store the client-encrypted vault key. The server cannot decrypt this value —
+/// it is an opaque blob only decryptable by a client that knows the account password.
+pub async fn set_vault_key(
+    State(state): State<AppState>,
+    claims: axum::Extension<crate::auth::tokens::Claims>,
+    Json(req): Json<SetVaultKeyRequest>,
+) -> Result<Json<MessageResponse>, AppError> {
+    if req.encrypted_vault_key.is_empty() {
+        return Err(AppError::BadRequest("encrypted_vault_key cannot be empty".into()));
+    }
+    // Minimal sanity: must be valid hex and at least 25 bytes (12 IV + 1 byte plaintext + 16 tag)
+    if req.encrypted_vault_key.len() < 50
+        || !req.encrypted_vault_key.chars().all(|c| c.is_ascii_hexdigit())
+    {
+        return Err(AppError::BadRequest("encrypted_vault_key must be valid hex (≥ 50 chars)".into()));
+    }
+
+    sqlx::query("UPDATE users SET encrypted_vault_key = ? WHERE id = ?")
+        .bind(&req.encrypted_vault_key)
+        .bind(&claims.sub)
+        .execute(&state.db)
+        .await?;
+
+    Ok(Json(MessageResponse {
+        message: "Vault key stored".into(),
     }))
 }
