@@ -381,7 +381,9 @@ server {
     # ssl_certificate /etc/letsencrypt/live/sync.yourdomain.com/fullchain.pem;
     # ssl_certificate_key /etc/letsencrypt/live/sync.yourdomain.com/privkey.pem;
 
-    client_max_body_size 100M;
+    # Must be >= MAX_UPLOAD_SIZE_MB in your .env file.
+    # nginx rejects requests before they reach the server if this is too low.
+    client_max_body_size 500M;
 
     location / {
         proxy_pass http://127.0.0.1:8443;
@@ -389,6 +391,10 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Allow slow uploads of large files
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
     }
 }
 ```
@@ -845,7 +851,9 @@ A theme toggle button is in the bottom-left corner of the sidebar (sun/moon icon
 
 1. **File exceeds `MAX_UPLOAD_SIZE_MB`.** The default is 100 MB. If you need to sync larger files, increase this value in your `.env` file and restart the server.
 
-2. **Reverse proxy is rejecting the request.** If you are using nginx, make sure `client_max_body_size` is set high enough in your nginx config (see Section 3).
+2. **Reverse proxy is rejecting the request.** If you are using nginx, make sure `client_max_body_size` in your nginx config is set to at least the same value as `MAX_UPLOAD_SIZE_MB` (see Section 3). nginx rejects the request before it reaches the server, so increasing `MAX_UPLOAD_SIZE_MB` alone has no effect when a proxy is in front.
+
+3. **Docker: `.env` changes not taking effect.** When running via Docker Compose, environment variables must be listed in the `environment:` section of `docker-compose.yml` — the `.env` file is not mounted into the container. Set `MAX_UPLOAD_SIZE_MB=500` in your `.env` file **and** ensure `docker-compose.yml` has `- MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-100}` in its `environment:` block, then run `docker compose up -d` to apply.
 
 ### How to Check Server Logs
 
