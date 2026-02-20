@@ -42,14 +42,13 @@ impl BlobStorage {
             .join(prefix2)
             .join(hash);
 
-        // Defense in depth: verify the resolved path is under base_dir
-        if let (Ok(resolved), Ok(base)) = (
-            std::fs::canonicalize(path.parent().unwrap_or(&path)).or_else(|_| Ok::<PathBuf, std::io::Error>(path.clone())),
-            std::fs::canonicalize(&self.base_dir).or_else(|_| Ok::<PathBuf, std::io::Error>(self.base_dir.clone())),
-        ) {
-            if !resolved.starts_with(&base) && path.parent().is_some() {
-                return Err(AppError::BadRequest("Invalid path".into()));
-            }
+        // Defense in depth: verify the constructed path is under base_dir.
+        // We use a lexical starts_with check instead of canonicalize so this
+        // works even when the subdirectory does not exist yet (new blobs).
+        // Path traversal is already prevented above by the UUID and hex-hash
+        // validators, so this is an extra sanity guard.
+        if !path.starts_with(&self.base_dir) {
+            return Err(AppError::BadRequest("Invalid path".into()));
         }
 
         Ok(path)
