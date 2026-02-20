@@ -392,6 +392,12 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
 
+        # Stream request bodies directly to the backend instead of buffering
+        # them to disk first. Critical for large file uploads — without this,
+        # nginx buffers the whole body before forwarding, which can time out
+        # or fail for very large files.
+        proxy_request_buffering off;
+
         # Allow slow uploads of large files
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;
