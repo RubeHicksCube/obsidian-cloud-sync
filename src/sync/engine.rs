@@ -131,7 +131,7 @@ pub async fn compute_delta(
     // number of files (≥ 10) to avoid false positives on small vaults.
     let client_looks_fresh = has_synced_before
         && expected_count >= 10
-        && (client_files.len() as i64) * 20 < expected_count; // client has < 5%
+        && (client_files.len() as i64) * 5 < expected_count; // client has < 20%
 
     if client_looks_fresh {
         tracing::warn!(
