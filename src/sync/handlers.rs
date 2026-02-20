@@ -279,6 +279,7 @@ pub async fn upload_multipart(
 
 /// Upsert file record within a transaction to prevent race conditions.
 /// Only creates a new version when the content hash actually changes.
+#[allow(clippy::too_many_arguments)]
 async fn upsert_file_record(
     db: &sqlx::SqlitePool,
     user_id: &str,

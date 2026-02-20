@@ -79,6 +79,7 @@ impl BlobStorage {
         Ok(fs::read(&path).await?)
     }
 
+    #[allow(dead_code)]
     pub async fn exists(&self, user_id: &str, hash: &str) -> bool {
         match self.blob_path(user_id, hash) {
             Ok(path) => path.exists(),
@@ -86,6 +87,7 @@ impl BlobStorage {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn delete(&self, user_id: &str, hash: &str) -> Result<(), AppError> {
         let path = self.blob_path(user_id, hash)?;
         if path.exists() {
@@ -95,6 +97,7 @@ impl BlobStorage {
     }
 
     /// Calculate total storage used by a user
+    #[allow(dead_code)]
     pub async fn user_storage_bytes(&self, user_id: &str) -> Result<u64, AppError> {
         let user_dir = self.base_dir.join(user_id);
         if !user_dir.exists() {
@@ -110,6 +113,7 @@ pub fn hash_bytes(data: &[u8]) -> String {
     hex::encode(hasher.finalize())
 }
 
+#[allow(dead_code)]
 async fn dir_size(path: &Path) -> Result<u64, AppError> {
     let mut total = 0u64;
     let mut entries = fs::read_dir(path).await?;

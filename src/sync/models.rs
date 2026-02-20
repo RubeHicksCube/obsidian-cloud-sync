@@ -17,6 +17,7 @@ pub struct DeltaRequest {
     pub deleted_paths: Vec<String>,
     /// Ignored — server uses the JWT device_id. Kept for backward compatibility.
     #[serde(default)]
+    #[allow(dead_code)]
     pub device_id: Option<String>,
 }
 
@@ -53,6 +54,7 @@ pub struct UploadResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct CompleteRequest {
+    #[allow(dead_code)]
     pub device_id: String,
 }
 

@@ -26,6 +26,7 @@ pub struct UserInfo {
 
 pub async fn list_users(State(state): State<AppState>) -> Result<Json<Vec<UserInfo>>, AppError> {
     // Single aggregate query to avoid N+1
+    #[allow(clippy::type_complexity)]
     let rows: Vec<(String, String, Option<String>, bool, i64, i64, i64, i64, i64)> =
         sqlx::query_as(
             "SELECT u.id, u.username, u.email, u.is_admin, u.created_at, u.updated_at, \

@@ -12,6 +12,7 @@ pub struct Config {
     pub registration_open: bool,
     pub cors_origins: Vec<String>,
     // Security
+    #[allow(dead_code)]
     pub rate_limit_rpm: u32,
     pub lockout_threshold: u32,
     pub lockout_duration_secs: u64,
