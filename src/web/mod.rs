@@ -1,6 +1,6 @@
 use axum::{
     http::{header, StatusCode},
-    response::{Html, IntoResponse},
+    response::IntoResponse,
 };
 use rust_embed::Embed;
 
@@ -8,6 +8,8 @@ use rust_embed::Embed;
 #[folder = "src/web/static/"]
 pub struct StaticAssets;
 
+/// Serve the self-contained admin SPA (all CSS and JS are inlined).
+/// No separate static file requests means no browser caching issues.
 pub async fn index() -> impl IntoResponse {
     match StaticAssets::get("index.html") {
         Some(content) => (
@@ -19,28 +21,6 @@ pub async fn index() -> impl IntoResponse {
             content.data.to_vec(),
         )
             .into_response(),
-        None => (StatusCode::NOT_FOUND, "Not found").into_response(),
-    }
-}
-
-pub async fn static_file(
-    axum::extract::Path(path): axum::extract::Path<String>,
-) -> impl IntoResponse {
-    match StaticAssets::get(&path) {
-        Some(content) => {
-            let mime = mime_guess::from_path(&path)
-                .first_or_octet_stream()
-                .to_string();
-            (
-                [
-                    (header::CONTENT_TYPE, mime),
-                    (header::CACHE_CONTROL, "no-store, no-cache, must-revalidate".to_string()),
-                    (header::PRAGMA, "no-cache".to_string()),
-                ],
-                content.data.to_vec(),
-            )
-                .into_response()
-        }
         None => (StatusCode::NOT_FOUND, "Not found").into_response(),
     }
 }

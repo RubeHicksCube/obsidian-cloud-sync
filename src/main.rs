@@ -148,10 +148,9 @@ async fn main() {
     let ws_routes = Router::new()
         .route("/api/ws", get(ws::ws_upgrade));
 
-    // Web UI routes
+    // Web UI routes — single self-contained HTML response, no separate static files
     let web_routes = Router::new()
-        .route("/", get(web::index))
-        .route("/static/{*path}", get(web::static_file));
+        .route("/", get(web::index));
 
     let app = Router::new()
         .merge(admin_routes)
