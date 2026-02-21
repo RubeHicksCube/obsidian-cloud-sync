@@ -10,12 +10,15 @@ pub struct StaticAssets;
 
 pub async fn index() -> impl IntoResponse {
     match StaticAssets::get("index.html") {
-        Some(content) => Html(
-            std::str::from_utf8(content.data.as_ref())
-                .unwrap_or("")
-                .to_string(),
+        Some(content) => (
+            [
+                (header::CONTENT_TYPE, "text/html; charset=utf-8".to_string()),
+                (header::CACHE_CONTROL, "no-store, no-cache, must-revalidate".to_string()),
+                (header::PRAGMA, "no-cache".to_string()),
+            ],
+            content.data.to_vec(),
         )
-        .into_response(),
+            .into_response(),
         None => (StatusCode::NOT_FOUND, "Not found").into_response(),
     }
 }
@@ -31,7 +34,8 @@ pub async fn static_file(
             (
                 [
                     (header::CONTENT_TYPE, mime),
-                    (header::CACHE_CONTROL, "no-cache".to_string()),
+                    (header::CACHE_CONTROL, "no-store, no-cache, must-revalidate".to_string()),
+                    (header::PRAGMA, "no-cache".to_string()),
                 ],
                 content.data.to_vec(),
             )
