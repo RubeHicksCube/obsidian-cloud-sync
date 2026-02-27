@@ -37,6 +37,7 @@ pub struct VersionInfo {
 #[derive(Deserialize)]
 pub struct ListQuery {
     pub include_deleted: Option<bool>,
+    pub vault_id: Option<String>,
 }
 
 pub async fn list_files(
@@ -45,21 +46,24 @@ pub async fn list_files(
     Query(query): Query<ListQuery>,
 ) -> Result<Json<Vec<FileInfo>>, AppError> {
     let include_deleted = query.include_deleted.unwrap_or(false);
+    let vault_id = query.vault_id.as_deref().unwrap_or("default");
 
     let files: Vec<FileRow> = if include_deleted {
         sqlx::query_as(
             "SELECT id, path, current_version, hash, size, is_deleted, created_at, updated_at \
-             FROM files WHERE user_id = ? ORDER BY path",
+             FROM files WHERE user_id = ? AND vault_id = ? ORDER BY path",
         )
         .bind(&claims.sub)
+        .bind(vault_id)
         .fetch_all(&state.db)
         .await?
     } else {
         sqlx::query_as(
             "SELECT id, path, current_version, hash, size, is_deleted, created_at, updated_at \
-             FROM files WHERE user_id = ? AND is_deleted = FALSE ORDER BY path",
+             FROM files WHERE user_id = ? AND vault_id = ? AND is_deleted = FALSE ORDER BY path",
         )
         .bind(&claims.sub)
+        .bind(vault_id)
         .fetch_all(&state.db)
         .await?
     };

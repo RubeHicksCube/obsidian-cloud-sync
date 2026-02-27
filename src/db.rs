@@ -103,6 +103,10 @@ fn collect_migration_files() -> Vec<(String, String)> {
             "003_vault_key.sql".to_string(),
             include_str!("../migrations/003_vault_key.sql").to_string(),
         ),
+        (
+            "004_vaults.sql".to_string(),
+            include_str!("../migrations/004_vaults.sql").to_string(),
+        ),
     ];
     migrations.sort_by(|a, b| a.0.cmp(&b.0));
     migrations

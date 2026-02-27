@@ -8,6 +8,7 @@ mod devices;
 mod errors;
 mod files;
 mod sync;
+mod vaults;
 mod web;
 mod ws;
 
@@ -110,6 +111,7 @@ async fn main() {
             "/api/files/archive/restore",
             post(files::handlers::restore_all),
         )
+        .route("/api/vaults", get(vaults::list).post(vaults::create))
         .route("/api/devices", get(devices::handlers::list_devices))
         .route("/api/devices", delete(devices::handlers::revoke_all_devices))
         .route(

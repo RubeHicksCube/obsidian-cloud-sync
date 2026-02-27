@@ -99,13 +99,56 @@ fn check_encryption_enforcement(data: &[u8], require_encryption: bool) -> Result
     Ok(())
 }
 
+/// Resolve and validate a vault_id for the given user.
+/// If vault_id is "default" and the vault doesn't exist yet, it is auto-created.
+/// Returns the resolved vault_id or an error if not found.
+async fn resolve_vault_id(
+    db: &sqlx::SqlitePool,
+    user_id: &str,
+    vault_id: &str,
+) -> Result<String, AppError> {
+    let exists: bool = sqlx::query_scalar(
+        "SELECT COUNT(*) > 0 FROM vaults WHERE id = ? AND user_id = ?",
+    )
+    .bind(vault_id)
+    .bind(user_id)
+    .fetch_one(db)
+    .await?;
+
+    if exists {
+        return Ok(vault_id.to_string());
+    }
+
+    // Auto-create the default vault for users who registered before multi-vault support
+    if vault_id == "default" {
+        let now = Utc::now().timestamp();
+        sqlx::query(
+            "INSERT OR IGNORE INTO vaults (id, user_id, name, created_at) VALUES ('default', ?, 'Main Vault', ?)",
+        )
+        .bind(user_id)
+        .bind(now)
+        .execute(db)
+        .await?;
+        return Ok("default".to_string());
+    }
+
+    Err(AppError::NotFound("Vault not found".into()))
+}
+
 pub async fn delta(
     State(state): State<AppState>,
     claims: axum::Extension<Claims>,
     Json(req): Json<DeltaRequest>,
 ) -> Result<Json<DeltaResponse>, AppError> {
+    let vault_id = resolve_vault_id(
+        &state.db,
+        &claims.sub,
+        req.vault_id.as_deref().unwrap_or("default"),
+    )
+    .await?;
+
     let instructions =
-        compute_delta(&state.db, &claims.sub, &req.files, &req.deleted_paths).await?;
+        compute_delta(&state.db, &claims.sub, &vault_id, &req.files, &req.deleted_paths).await?;
     let server_time = Utc::now().timestamp();
 
     // Return the account-wide encryption salt so all devices can share the same key.
@@ -135,6 +178,9 @@ pub struct UploadBody {
     /// File contents, base64-encoded. Encoding avoids proxy WAF rules
     /// that inspect or block binary (application/octet-stream) bodies.
     pub data: String,
+    /// Vault namespace. Defaults to "default" for backward compatibility.
+    #[serde(default)]
+    pub vault_id: Option<String>,
 }
 
 /// Upload a file as base64-encoded data inside a JSON body.
@@ -146,6 +192,13 @@ pub async fn upload(
     Json(body): Json<UploadBody>,
 ) -> Result<Json<UploadResponse>, AppError> {
     check_storage_quota(&state, &claims.sub).await?;
+
+    let vault_id = resolve_vault_id(
+        &state.db,
+        &claims.sub,
+        body.vault_id.as_deref().unwrap_or("default"),
+    )
+    .await?;
 
     let file_path = validate_file_path(&body.path)?;
     let file_data = base64::engine::general_purpose::STANDARD
@@ -171,6 +224,7 @@ pub async fn upload(
     let (file_id, version) = upsert_file_record(
         &state.db,
         &claims.sub,
+        &vault_id,
         &file_path,
         &hash,
         size,
@@ -262,6 +316,7 @@ pub async fn upload_multipart(
     let (file_id, version) = upsert_file_record(
         &state.db,
         &claims.sub,
+        "default",
         &file_path,
         &hash,
         size,
@@ -293,6 +348,7 @@ pub async fn upload_multipart(
 async fn upsert_file_record(
     db: &sqlx::SqlitePool,
     user_id: &str,
+    vault_id: &str,
     file_path: &str,
     hash: &str,
     size: i64,
@@ -303,9 +359,10 @@ async fn upsert_file_record(
     let mut tx = db.begin().await?;
 
     let existing: Option<(String, i64, String)> = sqlx::query_as(
-        "SELECT id, current_version, hash FROM files WHERE user_id = ? AND path = ?",
+        "SELECT id, current_version, hash FROM files WHERE user_id = ? AND vault_id = ? AND path = ?",
     )
     .bind(user_id)
+    .bind(vault_id)
     .bind(file_path)
     .fetch_optional(&mut *tx)
     .await?;
@@ -340,11 +397,12 @@ async fn upsert_file_record(
         None => {
             let id = Uuid::new_v4().to_string();
             sqlx::query(
-                "INSERT INTO files (id, user_id, path, current_version, hash, size, is_deleted, created_at, updated_at) \
-                 VALUES (?, ?, ?, 1, ?, ?, FALSE, ?, ?)",
+                "INSERT INTO files (id, user_id, vault_id, path, current_version, hash, size, is_deleted, created_at, updated_at) \
+                 VALUES (?, ?, ?, ?, 1, ?, ?, FALSE, ?, ?)",
             )
             .bind(&id)
             .bind(user_id)
+            .bind(vault_id)
             .bind(file_path)
             .bind(hash)
             .bind(size)
@@ -444,6 +502,7 @@ pub async fn upload_batch(
         let (file_id, version) = upsert_file_record(
             &state.db,
             &claims.sub,
+            "default",
             file_path,
             &hash,
             size,

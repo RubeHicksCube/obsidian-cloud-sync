@@ -19,6 +19,9 @@ pub struct DeltaRequest {
     #[serde(default)]
     #[allow(dead_code)]
     pub device_id: Option<String>,
+    /// Vault namespace for this sync. Defaults to "default" for backward compatibility.
+    #[serde(default)]
+    pub vault_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]

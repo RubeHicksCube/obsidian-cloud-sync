@@ -18,6 +18,7 @@ use crate::sync::models::*;
 pub async fn compute_delta(
     db: &SqlitePool,
     user_id: &str,
+    vault_id: &str,
     client_files: &[FileManifestEntry],
     deleted_paths: &[String],
 ) -> Result<Vec<SyncInstruction>, AppError> {
@@ -31,10 +32,11 @@ pub async fn compute_delta(
     for path in deleted_paths {
         sqlx::query(
             "UPDATE files SET is_deleted = TRUE, updated_at = ? \
-             WHERE user_id = ? AND path = ? AND is_deleted = FALSE",
+             WHERE user_id = ? AND vault_id = ? AND path = ? AND is_deleted = FALSE",
         )
         .bind(now)
         .bind(user_id)
+        .bind(vault_id)
         .bind(path)
         .execute(db)
         .await?;
@@ -42,9 +44,11 @@ pub async fn compute_delta(
 
     // ── Step 2: Load server state (after applying deletions above) ────────────
     let server_files: Vec<(String, String, String, i64, bool, i64)> = sqlx::query_as(
-        "SELECT id, path, hash, size, is_deleted, updated_at FROM files WHERE user_id = ?",
+        "SELECT id, path, hash, size, is_deleted, updated_at FROM files \
+         WHERE user_id = ? AND vault_id = ?",
     )
     .bind(user_id)
+    .bind(vault_id)
     .fetch_all(db)
     .await?;
 
