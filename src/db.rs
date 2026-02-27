@@ -20,6 +20,7 @@ pub async fn init_pool(config: &Config) -> Result<SqlitePool, sqlx::Error> {
         .await?;
 
     run_migrations(&pool).await?;
+    run_vault_migration(&pool).await?;
     seed_default_settings(&pool).await?;
 
     Ok(pool)
@@ -131,6 +132,69 @@ async fn add_column_if_missing(pool: &SqlitePool, table: &str, column: &str, col
             tracing::info!("Added column {}.{}", table, column);
         }
     }
+}
+
+/// Idempotent vault schema migration run after SQL migrations.
+///
+/// Handles three cases:
+///   1. Partial previous execution: `files` was dropped but `files_new` rename failed →
+///      renames `files_new` back to `files`.
+///   2. `files` exists without `vault_id` column → adds the column.
+///   3. Already fully migrated → all operations are no-ops.
+async fn run_vault_migration(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    // Step 1: Detect and recover from partial migration
+    let files_exists: bool = sqlx::query_scalar(
+        "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='files'",
+    )
+    .fetch_one(pool)
+    .await?;
+
+    if !files_exists {
+        let files_new_exists: bool = sqlx::query_scalar(
+            "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='files_new'",
+        )
+        .fetch_one(pool)
+        .await?;
+
+        if files_new_exists {
+            tracing::warn!("Recovering partial vault migration: renaming files_new → files");
+            sqlx::query("ALTER TABLE files_new RENAME TO files")
+                .execute(pool)
+                .await?;
+            tracing::info!("Recovery complete: files_new renamed to files");
+        } else {
+            return Err(sqlx::Error::Configuration(
+                "Database corrupt: 'files' table is missing and 'files_new' does not exist".into(),
+            ));
+        }
+    }
+
+    // Step 2: Add vault_id columns if not present (idempotent)
+    add_column_if_missing(pool, "files", "vault_id", "TEXT NOT NULL DEFAULT 'default'").await;
+    add_column_if_missing(
+        pool,
+        "file_versions",
+        "vault_id",
+        "TEXT NOT NULL DEFAULT 'default'",
+    )
+    .await;
+
+    // Step 3: Ensure index exists (IF NOT EXISTS makes this idempotent)
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_files_user_vault_path ON files(user_id, vault_id, path)",
+    )
+    .execute(pool)
+    .await?;
+
+    // Step 4: Seed "Main Vault" (id='default') for every user that doesn't have one yet
+    sqlx::query(
+        "INSERT OR IGNORE INTO vaults (id, user_id, name, created_at) \
+         SELECT 'default', id, 'Main Vault', unixepoch() FROM users",
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
 
 async fn seed_default_settings(pool: &SqlitePool) -> Result<(), sqlx::Error> {
