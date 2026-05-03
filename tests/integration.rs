@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 async fn spawn_server() -> (SocketAddr, reqwest::Client) {
     // Use a temporary directory for each test's isolated data
@@ -16,6 +17,14 @@ async fn spawn_server() -> (SocketAddr, reqwest::Client) {
         max_upload_size_mb: 100,
         registration_open: true,
         cors_origins: vec!["http://localhost:0".into()],
+        rate_limit_rpm: 60,
+        lockout_threshold: 5,
+        lockout_duration_secs: 900,
+        max_storage_per_user_mb: 5000,
+        max_versions_per_file: 50,
+        version_retention_days: 90,
+        require_encryption: false,
+        log_level: "info".into(),
     };
 
     let pool = obsidian_cloud_sync::db::init_pool(&config).await.unwrap();
@@ -23,6 +32,7 @@ async fn spawn_server() -> (SocketAddr, reqwest::Client) {
     let state = obsidian_cloud_sync::auth::AppState {
         db: pool,
         config: config.clone(),
+        ws_clients: Arc::new(dashmap::DashMap::new()),
     };
 
     use axum::{

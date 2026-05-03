@@ -10,5 +10,6 @@ pub mod devices;
 pub mod errors;
 pub mod files;
 pub mod sync;
+pub mod vaults;
 pub mod web;
 pub mod ws;
